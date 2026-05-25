@@ -87,9 +87,10 @@ def render(route, title, desc, body):
         /* Toggles */
         .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid #2e3035; }
         .toggle-row:last-child { border-bottom: none; }
+        .toggle-info { max-width: 80%; }
         .toggle-info h4 { margin: 0; font-size: 15px; color: #fff; }
         .toggle-info p { margin: 4px 0 0 0; font-size: 13px; color: var(--sub); }
-        .toggle { position: relative; display: inline-block; width: 48px; height: 26px; }
+        .toggle { position: relative; display: inline-block; width: 48px; height: 26px; flex-shrink: 0; }
         .toggle input { opacity: 0; width: 0; height: 0; }
         .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4e5058; transition: .2s; border-radius: 34px; }
         .toggle-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: white; transition: .2s; border-radius: 50%; }
@@ -105,7 +106,7 @@ def render(route, title, desc, body):
         .btn { display: inline-block; background: var(--accent); color: #fff; border: none; padding: 10px 20px; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; transition: .15s; text-decoration: none; }
         .btn:hover { background: #4752c4; }
         .btn-primary { background: var(--accent); }
-        .btn-save-row { display: flex; justify-content: flex-end; margin-top: 12px; }
+        .btn-save-row { display: flex; justify-content: flex-end; margin-top: 24px; padding-top: 16px; border-top: 1px solid #3f4248; }
       </style>
     </head>
     <body>
@@ -170,9 +171,10 @@ def moderation():
       <div class="card-body">
         <div class="field"><label>Mod Log Channel ID</label><input type="text" id="log_channel" value="{log_channel}" placeholder="123456789012345678"></div>
         <div class="field"><label>Banned Words List (comma separated)</label><textarea id="banned_words" rows="3" placeholder="badword1, badword2, toxic">{banned_words}</textarea></div>
+        
+        <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Moderation Config</button></div>
       </div>
     </div>
-    <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Moderation Config</button></div>
     </form>
 
     <div id="toast_mod" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Moderation configs saved successfully!</div>
@@ -268,12 +270,13 @@ def levels():
         <div class="field"><label>Alert Destination</label><select id="levelup_type">{opts}</select></div>
         <div class="field"><label>Target Channel ID (Only if Specific Channel is active)</label><input type="text" id="level_channel" value="{ch_val}" placeholder="123456789012345678"></div>
         <div class="field"><label>Custom Announcement Message</label><textarea id="levelup_message" rows="3">{msg_val}</textarea></div>
+        
+        <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Configuration</button></div>
       </div>
     </div>
-    <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Configuration</button></div>
     </form>
 
-    <div class="card" style="margin-top:24px">
+    <div class="card">
       <div class="card-header"><h3>🏆 Server Top 10 Leaderboard</h3></div>
       <div class="card-body">{lb_rows}</div>
     </div>
@@ -378,10 +381,10 @@ def counting():
           <label>Shame Role Designation Name</label>
           <input type="text" id="shame_role_name" value="{shame_name_val}" placeholder="💀 Count Ruiner">
         </div>
+        
+        <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Counting Configurations</button></div>
       </div>
     </div>
-    
-    <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Counting Configurations</button></div>
     </form>
 
     <div id="toast_count" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Counting configs updated and live!</div>
@@ -439,7 +442,7 @@ def ai_settings():
         emoji_rows += f"""
         <div class="lb-row">
             <div class="lb-name"><img src="{s_url}" style="width:24px;height:24px;border-radius:4px;margin-right:8px;vertical-align:middle"><b>:{s_name}:</b></div>
-            <div class="lb-val"><button onclick="deleteEmoji('{s_name}')" style="background:#ed4245;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer">Remove</button></div>
+            <div class="lb-val"><button type="button" onclick="deleteEmoji('{s_name}')" style="background:#ed4245;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer">Remove</button></div>
         </div>"""
     if not emoji_rows:
         emoji_rows = '<div class="lb-empty">No custom external emojis added yet</div>'
@@ -460,21 +463,22 @@ def ai_settings():
           <div class="toggle-info"><h4>Auto Emoji Reactions</h4><p>Allow the AI to automatically place smart emojis on messages</p></div>
           <label class="toggle"><input type="checkbox" id="ai_auto_emojis" {emojis_on}><span class="toggle-slider"></span></label>
         </div>
+        
+        <div class="btn-save-row">
+          <button type="submit" class="btn btn-primary">Save Settings</button>
+        </div>
       </div>
-    </div>
-    <div class="btn-save-row">
-      <button type="submit" class="btn btn-primary">Save Settings</button>
     </div>
     </form>
 
-    <div class="card" style="margin-top:24px">
+    <div class="card">
       <div class="card-header"><h3>✨ Add External Emojis (Not in Discord Guild)</h3></div>
       <div class="card-body">
         <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px">
           <div class="field"><label>Emoji Name</label><input type="text" id="em_name" placeholder="pepe_smile"></div>
           <div class="field"><label>Image URL (PNG/JPG Link)</label><input type="text" id="em_url" placeholder="https://example.com/image.png"></div>
         </div>
-        <button onclick="addEmoji()" class="btn btn-primary" style="background:#57f287;color:black;font-weight:bold;">Add External Emoji</button>
+        <button type="button" onclick="addEmoji()" class="btn btn-primary" style="background:#57f287;color:black;font-weight:bold;">Add External Emoji</button>
         
         <div style="margin-top:20px">
             <h4>Current Custom External Emojis:</h4>
@@ -500,7 +504,7 @@ def ai_settings():
          var t = document.getElementById('toast_ai'); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
       }});
     }}
-    function addEmoji Amin(){{
+    function addEmoji() {{
       var name = document.getElementById('em_name').value;
       var url = document.getElementById('em_url').value;
       if(!name || !url) return alert('Please fill both fields!');
@@ -603,11 +607,14 @@ def generate_daily_route(module_name, emoji, title, default_msg):
         <div class="field"><label>Created Dynamic Thread Title</label><input type="text" id="daily_thread_name" value="{thread_name}"></div>
         <div class="field"><label>Thread Active Lifespan Duration</label><select id="daily_duration">{duration_opts}</select></div>
         <div class="field"><label>Thread Interval Slowmode Constraint (seconds)</label><input type="number" id="daily_slowmode" value="{slowmode}"></div>
+        
+        <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save {module_name.upper()} Configs</button></div>
       </div>
     </div>
-    <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save {module_name.upper()} Configs</button></div>
     </form>
+    
     <div id="toast_{module_name}" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ {module_name.upper()} configs updated and live!</div>
+    
     <script>
     function saveDaily(e, mod){{
       e.preventDefault();
