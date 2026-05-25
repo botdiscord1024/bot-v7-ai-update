@@ -10,6 +10,12 @@ def load(f):
 def save(f, d):
     json.dump(d, open(f, 'w', encoding='utf-8'), indent=2)
 
+# Предпазва текста с фигурни скоби (напр. {{question}}) от изчезване при обработка от Flask
+def safe_jinja(val):
+    if val is None:
+        return ""
+    return f"{{% raw %}}{val}{{% endraw %}}"
+
 def xp_for_level(level):
     return 5 * (level ** 2) + 50 * level + 100
 
@@ -27,7 +33,7 @@ def get_level_from_xp(xp):
 def get_gid():
     bot = current_app.config.get('BOT')
     if bot and hasattr(bot, 'cached_data'):
-        for key in ['moderation', 'levels', 'counting', 'smashkarts', 'story']:
+        for key in ['moderation', 'levels', 'counting', 'smashkarts', 'story', 'qotd', 'fotd', 'sotd', 'rotd']:
             d = bot.cached_data.get(key, {})
             if d:
                 return list(d.keys())[0]
@@ -55,7 +61,7 @@ def render(route, title, desc, body):
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'GG Sans', sans-serif; }
         body { display: flex; height: 100vh; background: var(--b-dark); color: var(--text); overflow: hidden; }
         
-        .sidebar { width: 260px; background: var(--b-nav); padding: 24px 12px; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar { width: 260px; background: var(--b-nav); padding: 24px 12px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
         .brand { font-size: 18px; font-weight: 700; padding: 0 12px 20px 12px; border-bottom: 1px solid #2e3035; margin-bottom: 16px; color: #fff; }
         .nav-item { display: flex; align-items: center; padding: 10px 12px; border-radius: 4px; color: var(--sub); text-decoration: none; font-size: 14px; font-weight: 500; transition: .15s; }
         .nav-item:hover { background: #35373c; color: #fff; }
@@ -72,11 +78,13 @@ def render(route, title, desc, body):
         .card-header h3 { font-size: 18px; color: #fff; }
         .card-header p { font-size: 13px; color: var(--sub); margin-top: 2px; }
         
+        /* Form Controls */
         .field { margin-bottom: 20px; }
         .field label { display: block; font-size: 12px; font-weight: 700; color: var(--sub); text-transform: uppercase; margin-bottom: 8px; }
         .field input, .field select, .field textarea { width: 100%; background: var(--b-dark); border: 1px solid #111214; padding: 10px; border-radius: 4px; color: #fff; font-size: 14px; }
         .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); outline: none; }
         
+        /* Toggles */
         .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid #2e3035; }
         .toggle-row:last-child { border-bottom: none; }
         .toggle-info h4 { margin: 0; font-size: 15px; color: #fff; }
@@ -88,6 +96,7 @@ def render(route, title, desc, body):
         input:checked + .toggle-slider { background-color: #23a55a; }
         input:checked + .toggle-slider:before { transform: translateX(22px); }
         
+        /* Leaderboards & Lists */
         .lb-row { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--b-light); border-radius: 4px; margin-bottom: 8px; }
         .lb-name { display: flex; align-items: center; font-size: 14px; }
         .lb-val { font-size: 14px; color: var(--sub); font-weight: 600; }
@@ -106,6 +115,10 @@ def render(route, title, desc, body):
         <a href="/levels" class="nav-item {% if route=='levels' %}active{% endif %}">⭐ Leveling System</a>
         <a href="/counting" class="nav-item {% if route=='counting' %}active{% endif %}">🔢 Counting Game</a>
         <a href="/ai-settings" class="nav-item {% if route=='ai-settings' %}active{% endif %}">🤖 AI Assistant</a>
+        <a href="/qotd" class="nav-item {% if route=='qotd' %}active{% endif %}">❓ QOTD Settings</a>
+        <a href="/fotd" class="nav-item {% if route=='fotd' %}active{% endif %}">💡 FOTD Settings</a>
+        <a href="/sotd" class="nav-item {% if route=='sotd' %}active{% endif %}">🎵 SOTD Settings</a>
+        <a href="/rotd" class="nav-item {% if route=='rotd' %}active{% endif %}">🧩 ROTD Settings</a>
         <a href="/smashkarts" class="nav-item {% if route=='smashkarts' %}active{% endif %}">🏎️ Smash Karts</a>
         <a href="/story" class="nav-item {% if route=='story' %}active{% endif %}">📖 Story Mode</a>
       </div>
@@ -133,8 +146,8 @@ def moderation():
     
     automod_on = 'checked' if cfg.get('automod_enabled', False) else ''
     invite_block_on = 'checked' if cfg.get('block_invites', False) else ''
-    banned_words = cfg.get('banned_words', "")
-    log_channel = cfg.get('log_channel', "")
+    banned_words = safe_jinja(cfg.get('banned_words', ""))
+    log_channel = safe_jinja(cfg.get('log_channel', ""))
     
     body = f"""
     <form id="modForm" onsubmit="saveMod(event)">
@@ -214,8 +227,8 @@ def levels():
     <option value="disabled" {'selected' if type_opt=='disabled' else ''}>Disabled</option>
     """
     
-    msg_val = cfg.get('levelup_message', "GG {{user.mention}}! You just leveled up to **Level {{level}}**!")
-    ch_val = cfg.get('level_channel', "")
+    msg_val = safe_jinja(cfg.get('levelup_message', "GG {{user.mention}}! You just leveled up to **Level {{level}}**!"))
+    ch_val = safe_jinja(cfg.get('level_channel', ""))
 
     lvl_data = load('levels.json').get(gid, {})
     sorted_users = sorted(lvl_data.items(), key=lambda x: x[1].get('xp', 0) if isinstance(x[1], dict) else x[1], reverse=True)[:10]
@@ -224,7 +237,7 @@ def levels():
     for rank, (uid, data) in enumerate(sorted_users, 1):
         xp = data.get('xp', 0) if isinstance(data, dict) else data
         lvl = get_level_from_xp(xp)
-        name = resolve_name(uid, lvl_data)
+        name = safe_jinja(resolve_name(uid, lvl_data))
         lb_rows += f"""
         <div class="lb-row">
             <div class="lb-name"><b>#{rank}</b> &nbsp; {name}</div>
@@ -315,8 +328,8 @@ def counting():
     shame_role_on = 'checked' if c_data.get('shame_role', False) else ''
     delete_invalid_on = 'checked' if c_data.get('delete_invalid', False) else ''
     
-    ch_val = c_data.get('channel', "") or ""
-    shame_name_val = c_data.get('shame_role_name', "💀 Count Ruiner")
+    ch_val = safe_jinja(c_data.get('channel', "") or "")
+    shame_name_val = safe_jinja(c_data.get('shame_role_name', "💀 Count Ruiner"))
 
     body = f"""
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px;">
@@ -407,7 +420,7 @@ def api_counting_save():
     return jsonify({'ok': True})
 
 # ══════════════════════════════════════════════════════════
-#  AI SETTINGS & CUSTOM EMOJIS
+#  AI SETTINGS
 # ══════════════════════════════════════════════════════════
 @app.route('/ai-settings')
 def ai_settings():
@@ -421,10 +434,12 @@ def ai_settings():
     custom_emojis = cfg.get('custom_external_emojis', {})
     emoji_rows = ''
     for name, url in custom_emojis.items():
+        s_name = safe_jinja(name)
+        s_url = safe_jinja(url)
         emoji_rows += f"""
         <div class="lb-row">
-            <div class="lb-name"><img src="{url}" style="width:24px;height:24px;border-radius:4px;margin-right:8px;vertical-align:middle"><b>:{name}:</b></div>
-            <div class="lb-val"><button onclick="deleteEmoji('{name}')" style="background:#ed4245;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer">Remove</button></div>
+            <div class="lb-name"><img src="{s_url}" style="width:24px;height:24px;border-radius:4px;margin-right:8px;vertical-align:middle"><b>:{s_name}:</b></div>
+            <div class="lb-val"><button onclick="deleteEmoji('{s_name}')" style="background:#ed4245;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer">Remove</button></div>
         </div>"""
     if not emoji_rows:
         emoji_rows = '<div class="lb-empty">No custom external emojis added yet</div>'
@@ -438,7 +453,7 @@ def ai_settings():
       </div>
       <div class="card-body">
         <div class="toggle-row">
-          <div class="toggle-info"><h4>Reply on Mention / Reply</h4><p>Should the AI answer when someone pings or replies to its messages (like Level Up alerts)?</p></div>
+          <div class="toggle-info"><h4>Reply on Mention / Reply</h4><p>Should the AI answer when someone pings or replies to its messages?</p></div>
           <label class="toggle"><input type="checkbox" id="ai_reply_on_mention" {reply_on}><span class="toggle-slider"></span></label>
         </div>
         <div class="toggle-row">
@@ -468,12 +483,9 @@ def ai_settings():
       </div>
     </div>
 
-    <div id="toast" style="display:none;position:fixed;bottom:24px;right:24px;background:#57f287;color:#000;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Updated!</div>
+    <div id="toast_ai" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Updated!</div>
 
     <script>
-    function showToast(){{
-      var t=document.getElementById('toast'); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
-    }}
     function saveAiSettings(e){{
       e.preventDefault();
       fetch('/api/ai/save',{{
@@ -484,9 +496,11 @@ def ai_settings():
           ai_reply_on_mention: document.getElementById('ai_reply_on_mention').checked,
           ai_auto_emojis: document.getElementById('ai_auto_emojis').checked
         }})
-      }}).then(()=>showToast());
+      }}).then(()=> {{
+         var t = document.getElementById('toast_ai'); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
+      }});
     }}
-    function addEmoji(){{
+    function addEmoji Amin(){{
       var name = document.getElementById('em_name').value;
       var url = document.getElementById('em_url').value;
       if(!name || !url) return alert('Please fill both fields!');
@@ -540,6 +554,122 @@ def api_ai_emoji_delete():
     if hasattr(builtins, 'refresh_bot_cache'): 
         builtins.refresh_bot_cache()
     return jsonify({'ok':True})
+
+# ══════════════════════════════════════════════════════════
+#  QOTD / FOTD / SOTD / ROTD PAGES
+# ══════════════════════════════════════════════════════════
+def generate_daily_route(module_name, emoji, title, default_msg):
+    data_file = f"{module_name}.json"
+    gid = get_gid() or 'default'
+    data = load(data_file).get(gid, {})
+    
+    enabled = 'checked' if data.get('enabled', False) else ''
+    private_mode = 'checked' if data.get('private_mode', False) else ''
+    channel = safe_jinja(data.get('channel', ''))
+    roles = safe_jinja(data.get('roles', ''))
+    msg = safe_jinja(data.get('message', default_msg))
+    thread_name = safe_jinja(data.get('thread_name', '📌 Leave your replies here!'))
+    duration = data.get('duration', '1440')
+    slowmode = safe_jinja(data.get('slowmode', '0'))
+    
+    duration_opts = f"""
+    <option value="1440" {'selected' if duration=='1440' else ''}>One Day (24 Hours)</option>
+    <option value="4320" {'selected' if duration=='4320' else ''}>Three Days</option>
+    <option value="10080" {'selected' if duration=='10080' else ''}>One Week</option>
+    """
+    
+    body = f"""
+    <form id="{module_name}Form" onsubmit="saveDaily(event, '{module_name}')">
+    <div class="card">
+      <div class="card-header"><div><h3>Main Settings</h3><p>Configure channel binding and core automation</p></div></div>
+      <div class="card-body">
+        <div class="toggle-row">
+          <div class="toggle-info"><h4>Enable {module_name.upper()} Module</h4><p>Turn automated {title} delivery system status</p></div>
+          <label class="toggle"><input type="checkbox" id="daily_enabled" {enabled}> <span class="toggle-slider"></span></label>
+        </div>
+        <div class="field" style="margin-top:20px;"><label>{module_name.upper()} Target Channel ID</label><input type="text" id="daily_channel" value="{channel}" placeholder="123456789012345678"></div>
+        <div class="field"><label>Mentioned Roles ID</label><input type="text" id="daily_roles" value="{roles}" placeholder="123456789012345678"></div>
+        <div class="toggle-row">
+          <div class="toggle-info"><h4>Private Mode</h4><p>When enabled, only targeted role mentions will gain communication permissions in threads</p></div>
+          <label class="toggle"><input type="checkbox" id="daily_private" {private_mode}> <span class="toggle-slider"></span></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div><h3>Announcement & Thread Configuration</h3><p>Customize system dispatch text structures</p></div></div>
+      <div class="card-body">
+        <div class="field"><label>{module_name.upper()} Broadcast Template Message</label><textarea id="daily_message" rows="4">{msg}</textarea></div>
+        <div class="field"><label>Created Dynamic Thread Title</label><input type="text" id="daily_thread_name" value="{thread_name}"></div>
+        <div class="field"><label>Thread Active Lifespan Duration</label><select id="daily_duration">{duration_opts}</select></div>
+        <div class="field"><label>Thread Interval Slowmode Constraint (seconds)</label><input type="number" id="daily_slowmode" value="{slowmode}"></div>
+      </div>
+    </div>
+    <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save {module_name.upper()} Configs</button></div>
+    </form>
+    <div id="toast_{module_name}" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ {module_name.upper()} configs updated and live!</div>
+    <script>
+    function saveDaily(e, mod){{
+      e.preventDefault();
+      fetch('/api/' + mod + '/save', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{
+          enabled: document.getElementById('daily_enabled').checked,
+          channel: document.getElementById('daily_channel').value,
+          roles: document.getElementById('daily_roles').value,
+          private_mode: document.getElementById('daily_private').checked,
+          message: document.getElementById('daily_message').value,
+          thread_name: document.getElementById('daily_thread_name').value,
+          duration: document.getElementById('daily_duration').value,
+          slowmode: document.getElementById('daily_slowmode').value
+        }})
+      }}).then(() => {{
+         var t = document.getElementById('toast_' + mod); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
+      }});
+    }}
+    </script>
+    """
+    return render(module_name, f"{emoji} {title} Control panel", f"Manage automated {module_name.upper()} definitions, structural content templates, and timing schedules", body)
+
+def api_daily_save(module_name):
+    gid = get_gid() or 'default'
+    data_file = f"{module_name}.json"
+    cfg = load(data_file)
+    cfg.setdefault(gid, {}).update(request.json)
+    save(data_file, cfg)
+    import builtins
+    if hasattr(builtins, 'refresh_bot_cache'): 
+        builtins.refresh_bot_cache()
+    return jsonify({'ok': True})
+
+@app.route('/qotd')
+def qotd():
+    return generate_daily_route('qotd', '❓', 'Question Of The Day', 'It is {day}, and time for a new daily question for you all to answer! If you would like to participate, check the question below, and feel free to leave any comments and replies in the thread below this post. The question of today is:\n\n"{question}"')
+
+@app.route('/api/qotd/save', methods=['POST'])
+def api_qotd_save(): return api_daily_save('qotd')
+
+@app.route('/fotd')
+def fotd():
+    return generate_daily_route('fotd', '💡', 'Fact Of The Day', 'It is {day}, and time for your daily fact! Did you know?\n\n"{fact}"')
+
+@app.route('/api/fotd/save', methods=['POST'])
+def api_fotd_save(): return api_daily_save('fotd')
+
+@app.route('/sotd')
+def sotd():
+    return generate_daily_route('sotd', '🎵', 'Song Of The Day', 'It is {day}, and here is the Song of the Day! Enjoy listening:\n\n"{song}"')
+
+@app.route('/api/sotd/save', methods=['POST'])
+def api_sotd_save(): return api_daily_save('sotd')
+
+@app.route('/rotd')
+def rotd():
+    return generate_daily_route('rotd', '🧩', 'Riddle Of The Day', 'It is {day}, and here is your Riddle of the Day! Can you solve it?\n\n"{riddle}"')
+
+@app.route('/api/rotd/save', methods=['POST'])
+def api_rotd_save(): return api_daily_save('rotd')
 
 # ══════════════════════════════════════════════════════════
 #  SMASH KARTS PAGE
