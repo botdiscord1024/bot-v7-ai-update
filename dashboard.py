@@ -27,7 +27,6 @@ def get_level_from_xp(xp):
 def get_gid():
     bot = current_app.config.get('BOT')
     if bot and hasattr(bot, 'cached_data'):
-        # Модерацията вече е с най-висок приоритет при проверка на Guild ID
         for key in ['moderation', 'levels', 'counting', 'smashkarts', 'story']:
             d = bot.cached_data.get(key, {})
             if d:
@@ -44,6 +43,9 @@ def resolve_name(uid, lvl_data):
             return user.display_name
     return f"User {uid}"
 
+# ══════════════════════════════════════════════════════════
+#  ОБНОВЕНА ФУНКЦИЯ ЗА РЕНДЕРИРАНЕ СЪС СЕКЦИИ ЗА ВСИЧКИ ЕЖЕДНЕВНИ МОДУЛИ
+# ══════════════════════════════════════════════════════════
 def render(route, title, desc, body):
     return render_template_string("""
     <!DOCTYPE html>
@@ -56,7 +58,7 @@ def render(route, title, desc, body):
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'GG Sans', sans-serif; }
         body { display: flex; height: 100vh; background: var(--b-dark); color: var(--text); overflow: hidden; }
         
-        .sidebar { width: 260px; background: var(--b-nav); padding: 24px 12px; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar { width: 260px; background: var(--b-nav); padding: 24px 12px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
         .brand { font-size: 18px; font-weight: 700; padding: 0 12px 20px 12px; border-bottom: 1px solid #2e3035; margin-bottom: 16px; color: #fff; }
         .nav-item { display: flex; align-items: center; padding: 10px 12px; border-radius: 4px; color: var(--sub); text-decoration: none; font-size: 14px; font-weight: 500; transition: .15s; }
         .nav-item:hover { background: #35373c; color: #fff; }
@@ -110,6 +112,12 @@ def render(route, title, desc, body):
         <a href="/levels" class="nav-item {% if route=='levels' %}active{% endif %}">⭐ Leveling System</a>
         <a href="/counting" class="nav-item {% if route=='counting' %}active{% endif %}">🔢 Counting Game</a>
         <a href="/ai-settings" class="nav-item {% if route=='ai-settings' %}active{% endif %}">🤖 AI Assistant</a>
+        
+        <a href="/qotd" class="nav-item {% if route=='qotd_settings' %}active{% endif %}">❓ QOTD Settings</a>
+        <a href="/fotd" class="nav-item {% if route=='fotd_settings' %}active{% endif %}">💡 FOTD Settings</a>
+        <a href="/rotd" class="nav-item {% if route=='rotd_settings' %}active{% endif %}">🧠 ROTD Settings</a>
+        <a href="/sotd" class="nav-item {% if route=='sotd_settings' %}active{% endif %}">🎵 SOTD Settings</a>
+        
         <a href="/smashkarts" class="nav-item {% if route=='smashkarts' %}active{% endif %}">🏎️ Smash Karts</a>
         <a href="/story" class="nav-item {% if route=='story' %}active{% endif %}">📖 Story Mode</a>
       </div>
@@ -200,394 +208,53 @@ def api_moderation_save():
     return jsonify({'ok': True})
 
 # ══════════════════════════════════════════════════════════
-#  LEVELING PAGE
+#  ⚙️ ДИНАМИЧЕН ГЕНЕРАТОР НА СТРАНИЦИ ЗА ЕЖЕДНЕВНИТЕ МОДУЛИ (QOTD, FOTD, ROTD, SOTD)
 # ══════════════════════════════════════════════════════════
-@app.route('/levels')
-def levels():
+def render_daily_page(key, title, icon, default_msg):
     gid = get_gid() or 'default'
-    cfg = load('config.json').get(gid, {})
+    cfg = load('config.json').get(gid, {}).get(key, {})
     
-    lvl_msg_on = 'checked' if cfg.get('enable_levelup_message', True) else ''
-    vc_xp_on = 'checked' if cfg.get('enable_voice_xp', True) else ''
+    enabled_checked = 'checked' if cfg.get('enabled', True) else ''
+    channel_id = cfg.get('channel_id', '')
+    roles = ", ".join(cfg.get('mentioned_roles', [])) if isinstance(cfg.get('mentioned_roles'), list) else cfg.get('mentioned_roles', '')
+    msg = cfg.get('announcement_message', default_msg)
+    t_name = cfg.get('thread_name', '💬 Leave comments here!')
+    slowmode = cfg.get('slowmode', 0)
     
-    type_opt = cfg.get('levelup_type', 'channel')
-    opts = f"""
-    <option value="channel" {'selected' if type_opt=='channel' else ''}>Specific Channel</option>
-    <option value="current" {'selected' if type_opt=='current' else ''}>Current Channel</option>
-    <option value="dm" {'selected' if type_opt=='dm' else ''}>Direct Message (DM)</option>
-    <option value="disabled" {'selected' if type_opt=='disabled' else ''}>Disabled</option>
+    duration = str(cfg.get('archive_duration', 1440))
+    dur_opts = f"""
+    <option value="60" {'selected' if duration=='60' else ''}>1 Hour</option>
+    <option value="1440" {'selected' if duration=='1440' else ''}>1 Day (Default)</option>
+    <option value="4320" {'selected' if duration=='4320' else ''}>3 Days</option>
+    <option value="10080" {'selected' if duration=='10080' else ''}>1 Week</option>
     """
-    
-    msg_val = cfg.get('levelup_message', "GG {{user.mention}}! You just leveled up to **Level {{level}}**!")
-    ch_val = cfg.get('level_channel', "")
-
-    lvl_data = load('levels.json').get(gid, {})
-    sorted_users = sorted(lvl_data.items(), key=lambda x: x[1].get('xp', 0) if isinstance(x[1], dict) else x[1], reverse=True)[:10]
-    
-    lb_rows = ""
-    for rank, (uid, data) in enumerate(sorted_users, 1):
-        xp = data.get('xp', 0) if isinstance(data, dict) else data
-        lvl = get_level_from_xp(xp)
-        name = resolve_name(uid, lvl_data)
-        lb_rows += f"""
-        <div class="lb-row">
-            <div class="lb-name"><b>#{rank}</b> &nbsp; {name}</div>
-            <div class="lb-val">Lvl {lvl} &nbsp;<span style="color:#4e5058;font-weight:normal;">({xp} XP)</span></div>
-        </div>"""
-    if not lb_rows:
-        lb_rows = '<div class="lb-empty">No level data available yet.</div>'
 
     body = f"""
-    <form id="lvlForm" onsubmit="saveLvl(event)">
-    <div class="card">
-      <div class="card-header"><div><h3>General Settings</h3><p>Configure automated level alerts and behaviors</p></div></div>
-      <div class="card-body">
-        <div class="toggle-row">
-          <div class="toggle-info"><h4>Level Up Messages</h4><p>Enable announcements when server members level up</p></div>
-          <label class="toggle"><input type="checkbox" id="enable_levelup_message" {lvl_msg_on}> <span class="toggle-slider"></span></label>
-        </div>
-        <div class="toggle-row">
-          <div class="toggle-info"><h4>Voice Channel XP</h4><p>Award XP passively to members active in voice chats</p></div>
-          <label class="toggle"><input type="checkbox" id="enable_voice_xp" {vc_xp_on}> <span class="toggle-slider"></span></label>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header"><div><h3>Alert Behavior & Templates</h3><p>Customize where and how leveling up is displayed</p></div></div>
-      <div class="card-body">
-        <div class="field"><label>Alert Destination</label><select id="levelup_type">{opts}</select></div>
-        <div class="field"><label>Target Channel ID (Only if Specific Channel is active)</label><input type="text" id="level_channel" value="{ch_val}" placeholder="123456789012345678"></div>
-        <div class="field"><label>Custom Announcement Message</label><textarea id="levelup_message" rows="3">{msg_val}</textarea></div>
-      </div>
-    </div>
-    <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Configuration</button></div>
-    </form>
-
-    <div class="card" style="margin-top:24px">
-      <div class="card-header"><h3>🏆 Server Top 10 Leaderboard</h3></div>
-      <div class="card-body">{lb_rows}</div>
-    </div>
-
-    <div id="toast" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Leveling configs saved successfully!</div>
-
-    <script>
-    function saveLvl(e){{
-      e.preventDefault();
-      fetch('/api/levels/save', {{
-        method: 'POST',
-        headers: {{ 'Content-Type': 'application/json' }},
-        body: JSON.stringify({{
-          enable_levelup_message: document.getElementById('enable_levelup_message').checked,
-          enable_voice_xp: document.getElementById('enable_voice_xp').checked,
-          levelup_type: document.getElementById('levelup_type').value,
-          level_channel: document.getElementById('level_channel').value,
-          levelup_message: document.getElementById('levelup_message').value
-        }})
-      }}).then(() => {{
-         var t = document.getElementById('toast'); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
-      }});
-    }}
-    </script>
-    """
-    return render('levels', '⭐ Leveling System', 'Manage configurations and track active user XP records', body)
-
-@app.route('/api/levels/save', methods=['POST'])
-def api_levels_save():
-    gid = get_gid() or 'default'
-    cfg = load('config.json')
-    cfg.setdefault(gid, {}).update(request.json)
-    save('config.json', cfg)
-    import builtins
-    if hasattr(builtins, 'refresh_bot_cache'): 
-        builtins.refresh_bot_cache()
-    return jsonify({'ok': True})
-
-# ══════════════════════════════════════════════════════════
-#  COUNTING GAME PAGE (ОБНОВЕНА С ВСИЧКИ ЕКСТРИ)
-# ══════════════════════════════════════════════════════════
-@app.route('/counting')
-def counting():
-    gid = get_gid() or 'default'
-    c_data = load('counting.json').get(gid, {})
-    
-    current_count = c_data.get('count', 0)
-    high_score = c_data.get('high_score', 0)
-    last_user_id = c_data.get('last_user', 'None')
-    
-    # Стойности за суичовете и инпутите
-    counting_on = 'checked' if c_data.get('enabled', False) else ''
-    same_user_on = 'checked' if c_data.get('allow_same_user', False) else ''
-    shame_role_on = 'checked' if c_data.get('shame_role', False) else ''
-    delete_invalid_on = 'checked' if c_data.get('delete_invalid', False) else ''
-    
-    ch_val = c_data.get('channel', "") or ""
-    shame_name_val = c_data.get('shame_role_name', "💀 Count Ruiner")
-
-    body = f"""
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px;">
-      <div class="card" style="margin:0; text-align:center;">
-        <h4 style="color:#b5bac1;text-transform:uppercase;font-size:12px;letter-spacing:1px;">Current Counter</h4>
-        <h1 style="font-size:48px;color:#5865f2;margin-top:10px;">{current_count}</h1>
-      </div>
-      <div class="card" style="margin:0; text-align:center;">
-        <h4 style="color:#b5bac1;text-transform:uppercase;font-size:12px;letter-spacing:1px;">Server High Score</h4>
-        <h1 style="font-size:48px;color:#23a55a;margin-top:10px;">{high_score}</h1>
-      </div>
-    </div>
-
-    <form id="countingForm" onsubmit="saveCounting(event)">
-    <div class="card">
-      <div class="card-header"><div><h3>Game Execution Channels</h3><p>Configure channel binding and system automation state</p></div></div>
-      <div class="card-body">
-        <div class="toggle-row">
-          <div class="toggle-info"><h4>Enable Counting Game</h4><p>Toggle the mathematics simulation module status</p></div>
-          <label class="toggle"><input type="checkbox" id="counting_enabled" {counting_on}> <span class="toggle-slider"></span></label>
-        </div>
-        <div class="field" style="margin-top:20px;">
-          <label>Counting Channel ID</label>
-          <input type="text" id="counting_channel" value="{ch_val}" placeholder="123456789012345678">
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header"><div><h3>Gameplay & Restriction Mechanics</h3><p>Manage restriction logic and anti-spam protocols</p></div></div>
-      <div class="card-body">
-        <div class="toggle-row">
-          <div class="toggle-info"><h4>Allow Consecutive Counting</h4><p>Can a single individual submit two values in a row?</p></div>
-          <label class="toggle"><input type="checkbox" id="allow_same_user" {same_user_on}> <span class="toggle-slider"></span></label>
-        </div>
-        <div class="toggle-row">
-          <div class="toggle-info"><h4>Enforce Shame Mute (Block on Fail)</h4><p>Give shame role and block user from counting until removed</p></div>
-          <label class="toggle"><input type="checkbox" id="shame_role" {shame_role_on}> <span class="toggle-slider"></span></label>
-        </div>
-        <div class="toggle-row">
-          <div class="toggle-info"><h4>Auto-Clean Chat (Delete Invalid Messages)</h4><p>Instantly remove general chatter or wrong submissions to keep channel clean</p></div>
-          <label class="toggle"><input type="checkbox" id="delete_invalid" {delete_invalid_on}> <span class="toggle-slider"></span></label>
-        </div>
-        
-        <div class="field" style="margin-top:20px;">
-          <label>Shame Role Designation Name</label>
-          <input type="text" id="shame_role_name" value="{shame_name_val}" placeholder="💀 Count Ruiner">
-        </div>
-      </div>
-    </div>
-    
-    <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Counting Configurations</button></div>
-    </form>
-
-    <div id="toast_count" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Counting configs updated and live!</div>
-
-    <script>
-    function saveCounting(e){{
-      e.preventDefault();
-      fetch('/api/counting/save', {{
-        method: 'POST',
-        headers: {{ 'Content-Type': 'application/json' }},
-        body: JSON.stringify({{
-          enabled: document.getElementById('counting_enabled').checked,
-          channel: document.getElementById('counting_channel').value,
-          allow_same_user: document.getElementById('allow_same_user').checked,
-          shame_role: document.getElementById('shame_role').checked,
-          delete_invalid: document.getElementById('delete_invalid').checked,
-          shame_role_name: document.getElementById('shame_role_name').value
-        }})
-      }}).then(() => {{
-         var t = document.getElementById('toast_count'); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
-      }});
-    }}
-    </script>
-    """
-    return render('counting', '🔢 Counting System', 'Real-time synchronization data tracking counting parameters', body)
-
-@app.route('/api/counting/save', methods=['POST'])
-def api_counting_save():
-    gid = get_gid() or 'default'
-    cfg = load('counting.json')
-    cfg.setdefault(gid, {}).update(request.json)
-    save('counting.json', cfg)
-    import builtins
-    if hasattr(builtins, 'refresh_bot_cache'): 
-        builtins.refresh_bot_cache()
-    return jsonify({'ok': True})
-# ══════════════════════════════════════════════════════════
-#  AI SETTINGS & CUSTOM EMOJIS
-# ══════════════════════════════════════════════════════════
-@app.route('/ai-settings')
-def ai_settings():
-    gid = get_gid() or 'default'
-    cfg = load('config.json').get(gid, {})
-    
-    ai_on = 'checked' if cfg.get('ai_enabled', True) else ''
-    reply_on = 'checked' if cfg.get('ai_reply_on_mention', True) else ''
-    emojis_on = 'checked' if cfg.get('ai_auto_emojis', True) else ''
-    
-    custom_emojis = cfg.get('custom_external_emojis', {})
-    emoji_rows = ''
-    for name, url in custom_emojis.items():
-        emoji_rows += f"""
-        <div class="lb-row">
-            <div class="lb-name"><img src="{url}" style="width:24px;height:24px;border-radius:4px;margin-right:8px;vertical-align:middle"><b>:{name}:</b></div>
-            <div class="lb-val"><button onclick="deleteEmoji('{name}')" style="background:#ed4245;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer">Remove</button></div>
-        </div>"""
-    if not emoji_rows:
-        emoji_rows = '<div class="lb-empty">No custom external emojis added yet</div>'
-
-    body = f"""
-    <form id="aiForm" onsubmit="saveAiSettings(event)">
+    <form id="dailyForm" onsubmit="saveDaily(event, '{key}')">
     <div class="card">
       <div class="card-header">
-        <div><h3>AI Control Panel</h3><p>Manage the behavior of your bot's smart AI assistant</p></div>
-        <label class="toggle"><input type="checkbox" id="ai_enabled" {ai_on}><span class="toggle-slider"></span></label>
+        <div><h3>{icon} {title} Module Activation</h3><p>Configure automated system state and targets</p></div>
+        <label class="toggle"><input type="checkbox" id="enabled" {enabled_checked}><span class="toggle-slider"></span></label>
       </div>
       <div class="card-body">
-        <div class="toggle-row">
-          <div class="toggle-info"><h4>Reply on Mention / Reply</h4><p>Should the AI answer when someone pings or replies to its messages (like Level Up alerts)?</p></div>
-          <label class="toggle"><input type="checkbox" id="ai_reply_on_mention" {reply_on}><span class="toggle-slider"></span></label>
-        </div>
-        <div class="toggle-row">
-          <div class="toggle-info"><h4>Auto Emoji Reactions</h4><p>Allow the AI to automatically place smart emojis on messages</p></div>
-          <label class="toggle"><input type="checkbox" id="ai_auto_emojis" {emojis_on}><span class="toggle-slider"></span></label>
-        </div>
-      </div>
-    </div>
-    <div class="btn-save-row">
-      <button type="submit" class="btn btn-primary">Save Settings</button>
-    </div>
-    </form>
-
-    <div class="card" style="margin-top:24px">
-      <div class="card-header"><h3>✨ Add External Emojis (Not in Discord Guild)</h3></div>
-      <div class="card-body">
-        <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px">
-          <div class="field"><label>Emoji Name</label><input type="text" id="em_name" placeholder="pepe_smile"></div>
-          <div class="field"><label>Image URL (PNG/JPG Link)</label><input type="text" id="em_url" placeholder="https://example.com/image.png"></div>
-        </div>
-        <button onclick="addEmoji()" class="btn btn-primary" style="background:#57f287;color:black;font-weight:bold;">Add External Emoji</button>
-        
-        <div style="margin-top:20px">
-            <h4>Current Custom External Emojis:</h4>
-            {emoji_rows}
-        </div>
+        <div class="field"><label>Target Channel ID</label><input type="text" id="channel_id" value="{channel_id}" placeholder="123456789012345678"></div>
+        <div class="field"><label>Mentioned Role IDs (comma separated)</label><input type="text" id="mentioned_roles" value="{roles}" placeholder="888888888888, 999999999999"></div>
       </div>
     </div>
 
-    <div id="toast" style="display:none;position:fixed;bottom:24px;right:24px;background:#57f287;color:#000;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Updated!</div>
-
-    <script>
-    function showToast(){{
-      var t=document.getElementById('toast'); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
-    }}
-    function saveAiSettings(e){{
-      e.preventDefault();
-      fetch('/api/ai/save',{{
-        method:'POST',
-        headers:{{'Content-Type':'application/json'}},
-        body:JSON.stringify({{
-          ai_enabled: document.getElementById('ai_enabled').checked,
-          ai_reply_on_mention: document.getElementById('ai_reply_on_mention').checked,
-          ai_auto_emojis: document.getElementById('ai_auto_emojis').checked
-        }})
-      }}).then(()=>showToast());
-    }}
-    function addEmoji(){{
-      var name = document.getElementById('em_name').value;
-      var url = document.getElementById('em_url').value;
-      if(!name || !url) return alert('Please fill both fields!');
-      fetch('/api/ai/emoji/add',{{
-        method:'POST',
-        headers:{{'Content-Type':'application/json'}},
-        body:JSON.stringify({{name:name, url:url}})
-      }}).then(()=>location.reload());
-    }}
-    function deleteEmoji(name){{
-      fetch('/api/ai/emoji/delete',{{
-        method:'POST',
-        headers:{{'Content-Type':'application/json'}},
-        body:JSON.stringify({{name:name}})
-      }}).then(()=>location.reload());
-    }}
-    </script>
-    """
-    return render('ai-settings', 'AI Assistant', 'Configure AI actions and external emojis', body)
-
-@app.route('/api/ai/save', methods=['POST'])
-def api_ai_save():
-    gid = get_gid() or 'default'
-    cfg = load('config.json')
-    cfg.setdefault(gid, {}).update(request.json)
-    save('config.json', cfg)
-    import builtins
-    if hasattr(builtins, 'refresh_bot_cache'): 
-        builtins.refresh_bot_cache()
-    return jsonify({'ok':True})
-
-@app.route('/api/ai/emoji/add', methods=['POST'])
-def api_ai_emoji_add():
-    gid = get_gid() or 'default'
-    cfg = load('config.json')
-    cfg.setdefault(gid, {}).setdefault('custom_external_emojis', {})[request.json['name']] = request.json['url']
-    save('config.json', cfg)
-    import builtins
-    if hasattr(builtins, 'refresh_bot_cache'): 
-        builtins.refresh_bot_cache()
-    return jsonify({'ok':True})
-
-@app.route('/api/ai/emoji/delete', methods=['POST'])
-def api_ai_emoji_delete():
-    gid = get_gid() or 'default'
-    cfg = load('config.json')
-    if gid in cfg and 'custom_external_emojis' in cfg[gid]:
-        cfg[gid]['custom_external_emojis'].pop(request.json['name'], None)
-        save('config.json', cfg)
-    import builtins
-    if hasattr(builtins, 'refresh_bot_cache'): 
-        builtins.refresh_bot_cache()
-    return jsonify({'ok':True})
-
-# ══════════════════════════════════════════════════════════
-#  SMASH KARTS PAGE
-# ══════════════════════════════════════════════════════════
-@app.route('/smashkarts')
-def smashkarts():
-    gid = get_gid() or 'default'
-    sk_data = load('smashkarts.json').get(gid, {})
-    sorted_sk = sorted(sk_data.items(), key=lambda x: x[1].get('wins', 0) if isinstance(x[1], dict) else 0, reverse=True)[:10]
-    
-    lb_rows = ""
-    for rank, (uid, data) in enumerate(sorted_sk, 1):
-        wins = data.get('wins', 0)
-        lb_rows += f"""
-        <div class="lb-row">
-            <div class="lb-name"><b>#{rank}</b> &nbsp; User {uid}</div>
-            <div class="lb-val" style="color:#57f287;">{wins} Wins 🏎️</div>
-        </div>"""
-    if not lb_rows:
-        lb_rows = '<div class="lb-empty">No active matches recorded yet.</div>'
-
-    body = f"""<div class="card"><div class="card-header"><h3>🏎️ Competitive Leaderboard</h3></div><div class="card-body">{lb_rows}</div></div>"""
-    return render('smashkarts', '🏎️ Smash Karts Statistics', 'Global race metrics and win record compilations', body)
-
-# ══════════════════════════════════════════════════════════
-#  STORY MODE PAGE
-# ══════════════════════════════════════════════════════════
-@app.route('/story')
-def story():
-    gid = get_gid() or 'default'
-    st_data = load('story.json').get(gid, {})
-    
-    body = f"""
     <div class="card">
-      <div class="card-header"><h3>📖 Ongoing Story Session</h3></div>
+      <div class="card-header"><div><h3>📝 Embed Layout & Automated Thread Configuration</h3><p>Customize the presentation view and community responses</p></div></div>
       <div class="card-body">
-        <p style="font-size:14px;color:#b5bac1;">Active Authors/Contributors recorded: <b style="color:#fff;">{len(st_data)} members</b></p>
-        <p style="font-size:13px;color:#4e5058;margin-top:12px;">Full adventure configurations are generated directly via storytelling interactions inside discord channels.</p>
+        <div class="field">
+            <label>Announcement Message Template (Use {{content}} where the AI generation belongs)</label>
+            <textarea id="announcement_message" rows="4">{msg}</textarea>
+        </div>
+        <div class="field"><label>Created Thread Name</label><input type="text" id="thread_name" value="{t_name}"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div class="field"><label>Thread Auto-Archive Duration</label><select id="archive_duration">{dur_opts}</select></div>
+            <div class="field"><label>Thread Slowmode (In seconds, 0 to disable)</label><input type="number" id="slowmode" value="{slowmode}"></div>
+        </div>
       </div>
     </div>
-    """
-    return render('story', '📖 Story Adventure Mode', 'Track server generated text simulations and interactive histories', body)
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    
+    <div class="btn-save-row">
