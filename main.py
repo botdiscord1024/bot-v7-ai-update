@@ -22,8 +22,21 @@ def refresh_bot_cache():
 import builtins
 builtins.refresh_bot_cache = refresh_bot_cache
 
-COGS = ['cogs.moderation', 'cogs.leveling', 'cogs.counting',
-        'cogs.story', 'cogs.games', 'cogs.smashkarts', 'cogs.ai_assistant']
+# ── 💡 ТУК ДОБАВИХМЕ НОВИТЕ ЕЖЕДНЕВНИ МОДУЛИ С ПРАВИЛНИТЕ ГЛАВНИ БУКВИ ──
+COGS = [
+    'cogs.moderation', 
+    'cogs.leveling', 
+    'cogs.counting',
+    'cogs.story', 
+    'cogs.games', 
+    'cogs.smashkarts', 
+    'cogs.ai_assistant',
+    'cogs.FOTD',
+    'cogs.QOTD',
+    'cogs.ROTD',
+    'cogs.SOTD'
+]
+
 @bot.event
 async def on_ready():
     print(f"✅ {bot.user} is online!")
