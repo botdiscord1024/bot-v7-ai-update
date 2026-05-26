@@ -10,12 +10,6 @@ def load(f):
 def save(f, d):
     json.dump(d, open(f, 'w', encoding='utf-8'), indent=2)
 
-# Предпазва текста с фигурни скоби (напр. {{question}}) от изчезване при обработка от Flask
-def safe_jinja(val):
-    if val is None:
-        return ""
-    return f"{{% raw %}}{val}{{% endraw %}}"
-
 def xp_for_level(level):
     return 5 * (level ** 2) + 50 * level + 100
 
@@ -33,7 +27,7 @@ def get_level_from_xp(xp):
 def get_gid():
     bot = current_app.config.get('BOT')
     if bot and hasattr(bot, 'cached_data'):
-        for key in ['moderation', 'levels', 'counting', 'smashkarts', 'story', 'qotd', 'fotd', 'sotd', 'rotd']:
+        for key in ['moderation', 'levels', 'counting', 'smashkarts', 'story']:
             d = bot.cached_data.get(key, {})
             if d:
                 return list(d.keys())[0]
@@ -61,14 +55,14 @@ def render(route, title, desc, body):
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'GG Sans', sans-serif; }
         body { display: flex; height: 100vh; background: var(--b-dark); color: var(--text); overflow: hidden; }
         
-        .sidebar { width: 260px; background: var(--b-nav); padding: 24px 12px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+        .sidebar { width: 260px; background: var(--b-nav); padding: 24px 12px; display: flex; flex-direction: column; gap: 4px; }
         .brand { font-size: 18px; font-weight: 700; padding: 0 12px 20px 12px; border-bottom: 1px solid #2e3035; margin-bottom: 16px; color: #fff; }
         .nav-item { display: flex; align-items: center; padding: 10px 12px; border-radius: 4px; color: var(--sub); text-decoration: none; font-size: 14px; font-weight: 500; transition: .15s; }
         .nav-item:hover { background: #35373c; color: #fff; }
         .nav-item.active { background: var(--accent); color: #fff; }
         
         .main { flex: 1; display: flex; flex-direction: column; height: 100vh; background: var(--b-dark); }
-        .header { background: var(--b-mid); padding: 20px 32px; border-bottom: 1px solid #1f2023; }
+        .header { background: var(--b-mid); padding: 20px 32px; border-bottom: 1px solid #1f2023; display: flex; justify-content: space-between; align-items: center; }
         .header h1 { font-size: 24px; font-weight: 700; color: #fff; }
         .header p { font-size: 14px; color: var(--sub); margin-top: 4px; }
         
@@ -87,15 +81,19 @@ def render(route, title, desc, body):
         /* Toggles */
         .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid #2e3035; }
         .toggle-row:last-child { border-bottom: none; }
-        .toggle-info { max-width: 80%; }
         .toggle-info h4 { margin: 0; font-size: 15px; color: #fff; }
         .toggle-info p { margin: 4px 0 0 0; font-size: 13px; color: var(--sub); }
-        .toggle { position: relative; display: inline-block; width: 48px; height: 26px; flex-shrink: 0; }
+        .toggle { position: relative; display: inline-block; width: 48px; height: 26px; }
         .toggle input { opacity: 0; width: 0; height: 0; }
         .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4e5058; transition: .2s; border-radius: 34px; }
         .toggle-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: white; transition: .2s; border-radius: 50%; }
         input:checked + .toggle-slider { background-color: #23a55a; }
         input:checked + .toggle-slider:before { transform: translateX(22px); }
+        
+        /* Grid Layout Utilities */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-blocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+        .block-item { background: var(--b-dark); border: 1px solid #111214; padding: 16px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
         
         /* Leaderboards & Lists */
         .lb-row { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--b-light); border-radius: 4px; margin-bottom: 8px; }
@@ -105,8 +103,13 @@ def render(route, title, desc, body):
         
         .btn { display: inline-block; background: var(--accent); color: #fff; border: none; padding: 10px 20px; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; transition: .15s; text-decoration: none; }
         .btn:hover { background: #4752c4; }
-        .btn-primary { background: var(--accent); }
-        .btn-save-row { display: flex; justify-content: flex-end; margin-top: 24px; padding-top: 16px; border-top: 1px solid #3f4248; }
+        .btn-danger { background: #ed4245; }
+        .btn-danger:hover { background: #c03b3e; }
+        .btn-secondary { background: #4e5058; }
+        .btn-secondary:hover { background: #6d6f78; }
+        .btn-save-row { display: flex; justify-content: flex-end; margin-top: 12px; gap: 10px; }
+        
+        .section-title { font-size: 12px; font-weight: 700; color: var(--sub); text-transform: uppercase; margin: 24px 0 12px 0; letter-spacing: 0.5px; }
       </style>
     </head>
     <body>
@@ -115,18 +118,22 @@ def render(route, title, desc, body):
         <a href="/moderation" class="nav-item {% if route=='moderation' %}active{% endif %}">🛡️ Moderation</a>
         <a href="/levels" class="nav-item {% if route=='levels' %}active{% endif %}">⭐ Leveling System</a>
         <a href="/counting" class="nav-item {% if route=='counting' %}active{% endif %}">🔢 Counting Game</a>
+        <a href="/qotd" class="nav-item {% if route=='qotd' %}active{% endif %}">❓ Question Of The Day</a>
+        <a href="/birthdays" class="nav-item {% if route=='birthdays' %}active{% endif %}">📅 Birthdays</a>
         <a href="/ai-settings" class="nav-item {% if route=='ai-settings' %}active{% endif %}">🤖 AI Assistant</a>
-        <a href="/qotd" class="nav-item {% if route=='qotd' %}active{% endif %}">❓ QOTD Settings</a>
-        <a href="/fotd" class="nav-item {% if route=='fotd' %}active{% endif %}">💡 FOTD Settings</a>
-        <a href="/sotd" class="nav-item {% if route=='sotd' %}active{% endif %}">🎵 SOTD Settings</a>
-        <a href="/rotd" class="nav-item {% if route=='rotd' %}active{% endif %}">🧩 ROTD Settings</a>
         <a href="/smashkarts" class="nav-item {% if route=='smashkarts' %}active{% endif %}">🏎️ Smash Karts</a>
         <a href="/story" class="nav-item {% if route=='story' %}active{% endif %}">📖 Story Mode</a>
       </div>
       <div class="main">
         <div class="header">
-          <h1>{{ title }}</h1>
-          <p>{{ desc }}</p>
+          <div>
+            <h1>{{ title }}</h1>
+            <p>{{ desc }}</p>
+          </div>
+          <div>
+            <button class="btn btn-secondary" style="background:#da373c; font-weight:600;">Reset to Default</button>
+            <button class="btn" style="background:#23a55a; font-weight:600; margin-left:8px;">Enable</button>
+          </div>
         </div>
         <div class="content">
           {{ body|safe }}
@@ -147,8 +154,8 @@ def moderation():
     
     automod_on = 'checked' if cfg.get('automod_enabled', False) else ''
     invite_block_on = 'checked' if cfg.get('block_invites', False) else ''
-    banned_words = safe_jinja(cfg.get('banned_words', ""))
-    log_channel = safe_jinja(cfg.get('log_channel', ""))
+    banned_words = cfg.get('banned_words', "")
+    log_channel = cfg.get('log_channel', "")
     
     body = f"""
     <form id="modForm" onsubmit="saveMod(event)">
@@ -171,10 +178,9 @@ def moderation():
       <div class="card-body">
         <div class="field"><label>Mod Log Channel ID</label><input type="text" id="log_channel" value="{log_channel}" placeholder="123456789012345678"></div>
         <div class="field"><label>Banned Words List (comma separated)</label><textarea id="banned_words" rows="3" placeholder="badword1, badword2, toxic">{banned_words}</textarea></div>
-        
-        <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Moderation Config</button></div>
       </div>
     </div>
+    <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Moderation Config</button></div>
     </form>
 
     <div id="toast_mod" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Moderation configs saved successfully!</div>
@@ -205,9 +211,6 @@ def api_moderation_save():
     cfg = load('config.json')
     cfg.setdefault(gid, {}).update(request.json)
     save('config.json', cfg)
-    import builtins
-    if hasattr(builtins, 'refresh_bot_cache'): 
-        builtins.refresh_bot_cache()
     return jsonify({'ok': True})
 
 # ══════════════════════════════════════════════════════════
@@ -229,8 +232,8 @@ def levels():
     <option value="disabled" {'selected' if type_opt=='disabled' else ''}>Disabled</option>
     """
     
-    msg_val = safe_jinja(cfg.get('levelup_message', "GG {{user.mention}}! You just leveled up to **Level {{level}}**!"))
-    ch_val = safe_jinja(cfg.get('level_channel', ""))
+    msg_val = cfg.get('levelup_message', "GG {{user.mention}}! You just leveled up to **Level {{level}}**!")
+    ch_val = cfg.get('level_channel', "")
 
     lvl_data = load('levels.json').get(gid, {})
     sorted_users = sorted(lvl_data.items(), key=lambda x: x[1].get('xp', 0) if isinstance(x[1], dict) else x[1], reverse=True)[:10]
@@ -239,7 +242,7 @@ def levels():
     for rank, (uid, data) in enumerate(sorted_users, 1):
         xp = data.get('xp', 0) if isinstance(data, dict) else data
         lvl = get_level_from_xp(xp)
-        name = safe_jinja(resolve_name(uid, lvl_data))
+        name = resolve_name(uid, lvl_data)
         lb_rows += f"""
         <div class="lb-row">
             <div class="lb-name"><b>#{rank}</b> &nbsp; {name}</div>
@@ -270,13 +273,12 @@ def levels():
         <div class="field"><label>Alert Destination</label><select id="levelup_type">{opts}</select></div>
         <div class="field"><label>Target Channel ID (Only if Specific Channel is active)</label><input type="text" id="level_channel" value="{ch_val}" placeholder="123456789012345678"></div>
         <div class="field"><label>Custom Announcement Message</label><textarea id="levelup_message" rows="3">{msg_val}</textarea></div>
-        
-        <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Configuration</button></div>
       </div>
     </div>
+    <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Configuration</button></div>
     </form>
 
-    <div class="card">
+    <div class="card" style="margin-top:24px">
       <div class="card-header"><h3>🏆 Server Top 10 Leaderboard</h3></div>
       <div class="card-body">{lb_rows}</div>
     </div>
@@ -310,9 +312,6 @@ def api_levels_save():
     cfg = load('config.json')
     cfg.setdefault(gid, {}).update(request.json)
     save('config.json', cfg)
-    import builtins
-    if hasattr(builtins, 'refresh_bot_cache'): 
-        builtins.refresh_bot_cache()
     return jsonify({'ok': True})
 
 # ══════════════════════════════════════════════════════════
@@ -331,8 +330,8 @@ def counting():
     shame_role_on = 'checked' if c_data.get('shame_role', False) else ''
     delete_invalid_on = 'checked' if c_data.get('delete_invalid', False) else ''
     
-    ch_val = safe_jinja(c_data.get('channel', "") or "")
-    shame_name_val = safe_jinja(c_data.get('shame_role_name', "💀 Count Ruiner"))
+    ch_val = c_data.get('channel', "")
+    shame_name_val = c_data.get('shame_role_name', "💀 Count Ruiner")
 
     body = f"""
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px;">
@@ -381,14 +380,12 @@ def counting():
           <label>Shame Role Designation Name</label>
           <input type="text" id="shame_role_name" value="{shame_name_val}" placeholder="💀 Count Ruiner">
         </div>
-        
-        <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Counting Configurations</button></div>
       </div>
     </div>
+    
+    <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Counting Configurations</button></div>
     </form>
-
-    <div id="toast_count" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Counting configs updated and live!</div>
-
+    <div id="toast_count" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Counting configs updated!</div>
     <script>
     function saveCounting(e){{
       e.preventDefault();
@@ -417,13 +414,327 @@ def api_counting_save():
     cfg = load('counting.json')
     cfg.setdefault(gid, {}).update(request.json)
     save('counting.json', cfg)
-    import builtins
-    if hasattr(builtins, 'refresh_bot_cache'): 
-        builtins.refresh_bot_cache()
     return jsonify({'ok': True})
 
 # ══════════════════════════════════════════════════════════
-#  AI SETTINGS
+#  QUESTION OF THE DAY (QOTD) PAGE
+# ══════════════════════════════════════════════════════════
+@app.route('/qotd')
+def qotd():
+    gid = get_gid() or 'default'
+    cfg = load('config.json').get(gid, {}).get('qotd', {})
+    
+    channel = cfg.get('channel', '')
+    roles = cfg.get('roles', '')
+    private_mode = 'checked' if cfg.get('private_mode', False) else ''
+    embed_enabled = 'checked' if cfg.get('embed_enabled', True) else ''
+    
+    author = cfg.get('author', '❓ Question Of The Day')
+    thumb = cfg.get('thumbnail', '')
+    msg_content = cfg.get('message', "It is {day}, and time for a new daily question for you all to answer! If you would like to participate, check the question below, and feel free to leave any comments and replies in the thread below this post. The question of today is:\\n\\n\"{question}\"")
+    img_url = cfg.get('image_url', '')
+    footer = cfg.get('footer', 'Please leave your replies in the thread attached to this message!')
+    color = cfg.get('color', '#f45142')
+    
+    thread_name = cfg.get('thread_name', '💬 Leave your replies here!')
+    duration = cfg.get('duration', 'One Day')
+    slowmode = cfg.get('slowmode', '0')
+
+    body = f"""
+    <form id="qotdForm" onsubmit="saveQotd(event)">
+      <div class="section-title">Question of the day</div>
+      <h3>Main Settings</h3>
+      <br>
+      <div class="card">
+        <div class="field">
+          <label>QOTD Channel</label>
+          <input type="text" id="qotd_channel" value="{channel}" placeholder="Select Channel ID">
+        </div>
+        <div class="field">
+          <label>Mentioned Roles</label>
+          <input type="text" id="qotd_roles" value="{roles}" placeholder="Add Role IDs (comma separated)">
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info"><h4>Private Mode</h4><p>When private mode is enabled, only people with the mentioned roles will have access to the thread to send replies.</p></div>
+          <label class="toggle"><input type="checkbox" id="qotd_private" {private_mode}> <span class="toggle-slider"></span></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div><h3>QOTD Announcement Message</h3><p>This embed or plain text message will be sent every day to prompt your members.</p></div>
+          <label class="toggle"><input type="checkbox" id="qotd_embed" {embed_enabled}> <span class="toggle-slider"></span></label>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label>Author</label><input type="text" id="qotd_author" value="{author}"></div>
+          <div class="field"><label>Thumbnail URL</label><input type="text" id="qotd_thumb" value="{thumb}"></div>
+        </div>
+        <div class="field">
+          <label>Message Text ({'{question}'} and {'{day}'} variables supported)</label>
+          <textarea id="qotd_msg" rows="5">{msg_content}</textarea>
+        </div>
+        <div class="field"><label>Image URL</label><input type="text" id="qotd_img" value="{img_url}"></div>
+        <div class="field"><label>Footer</label><input type="text" id="qotd_footer" value="{footer}"></div>
+        <div class="field" style="width: 150px;"><label>Embed Color</label><input type="color" id="qotd_color" value="{color}"></div>
+      </div>
+
+      <div class="card">
+        <div class="field">
+          <label>Created Thread Name</label>
+          <input type="text" id="qotd_thread_name" value="{thread_name}">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="field">
+          <label>Thread Archive Duration</label>
+          <select id="qotd_duration">
+            <option value="One Day" {"selected" if duration == "One Day" else ""}>One Day</option>
+            <option value="Three Days" {"selected" if duration == "Three Days" else ""}>Three Days</option>
+            <option value="One Week" {"selected" if duration == "One Week" else ""}>One Week</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="field">
+          <label>Thread Slowmode (in seconds)</label>
+          <input type="number" id="qotd_slowmode" value="{slowmode}">
+        </div>
+      </div>
+
+      <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save QOTD Config</button></div>
+    </form>
+    <div id="toast_qotd" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ QOTD configuration saved!</div>
+    <script>
+    function saveQotd(e){{
+      e.preventDefault();
+      fetch('/api/qotd/save', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{
+          channel: document.getElementById('qotd_channel').value,
+          roles: document.getElementById('qotd_roles').value,
+          private_mode: document.getElementById('qotd_private').checked,
+          embed_enabled: document.getElementById('qotd_embed').checked,
+          author: document.getElementById('qotd_author').value,
+          thumbnail: document.getElementById('qotd_thumb').value,
+          message: document.getElementById('qotd_msg').value,
+          image_url: document.getElementById('qotd_img').value,
+          footer: document.getElementById('qotd_footer').value,
+          color: document.getElementById('qotd_color').value,
+          thread_name: document.getElementById('qotd_thread_name').value,
+          duration: document.getElementById('qotd_duration').value,
+          slowmode: document.getElementById('qotd_slowmode').value
+        }})
+      }}).then(() => {{
+         var t = document.getElementById('toast_qotd'); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
+      }});
+    }}
+    </script>
+    """
+    return render('qotd', 'Main Settings', 'Boost the engagement of your server with daily questions to answer!', body)
+
+@app.route('/api/qotd/save', methods=['POST'])
+def api_qotd_save():
+    gid = get_gid() or 'default'
+    cfg = load('config.json')
+    cfg.setdefault(gid, {})['qotd'] = request.json
+    save('config.json', cfg)
+    return jsonify({'ok': True})
+
+# ══════════════════════════════════════════════════════════
+#  BIRTHDAYS MODULE PAGE
+# ══════════════════════════════════════════════════════════
+@app.route('/birthdays')
+def birthdays():
+    gid = get_gid() or 'default'
+    cfg = load('config.json').get(gid, {}).get('birthdays', {})
+    
+    tz = cfg.get('timezone', 'UTC±0:00 [London]')
+    time_send = cfg.get('time', '12:00 - 12 PM [Midday]')
+    save_year = cfg.get('save_year', 'Enabled')
+    color = cfg.get('embed_color', '#f45142')
+    
+    custom_card = 'checked' if cfg.get('custom_card', False) else ''
+    send_msg = 'checked' if cfg.get('send_msg', True) else ''
+    add_role = 'checked' if cfg.get('add_role', False) else ''
+    enable_showcase = 'checked' if cfg.get('enable_showcase', True) else ''
+    
+    admin_roles = cfg.get('admin_roles', '')
+    ch_restrict = cfg.get('ch_restrict', 'No channel restrictions')
+    role_restrict = cfg.get('role_restrict', 'No role restrictions')
+    
+    # Команди
+    cmd_set = 'checked' if cfg.get('cmd_set', True) else ''
+    cmd_remove = 'checked' if cfg.get('cmd_remove', True) else ''
+    cmd_view = 'checked' if cfg.get('cmd_view', True) else ''
+    cmd_upcoming = 'checked' if cfg.get('cmd_upcoming', True) else ''
+    cmd_showcase = 'checked' if cfg.get('cmd_showcase', True) else ''
+    cmd_manage = 'checked' if cfg.get('cmd_manage', True) else ''
+    
+    # Събития
+    evt_handler = 'checked' if cfg.get('evt_handler', True) else ''
+    evt_leaves = 'checked' if cfg.get('evt_leaves', True) else ''
+
+    body = f"""
+    <form id="bdayForm" onsubmit="saveBirthdays(event)">
+      <div class="section-title">Birthdays</div>
+      <h3>General Settings</h3>
+      <br>
+      <div class="card">
+        <div class="field">
+          <label>Timezone</label>
+          <select id="bd_tz">
+            <option value="UTC±0:00 [London]" {"selected" if tz=="UTC±0:00 [London]" else ""}>UTC±0:00 [London]</option>
+            <option value="UTC+2:00 [Sofia]" {"selected" if tz=="UTC+2:00 [Sofia]" else ""}>UTC+2:00 [Sofia]</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Time</label>
+          <select id="bd_time">
+            <option value="12:00 - 12 PM [Midday]" {"selected" if time_send=="12:00 - 12 PM [Midday]" else ""}>12:00 - 12 PM [Midday]</option>
+            <option value="09:00 - 9 AM [Morning]" {"selected" if time_send=="09:00 - 9 AM [Morning]" else ""}>09:00 - 9 AM [Morning]</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Save Birth Year</label>
+          <select id="bd_save_year">
+            <option value="Enabled" {"selected" if save_year=="Enabled" else ""}>Enabled</option>
+            <option value="Disabled" {"selected" if save_year=="Disabled" else ""}>Disabled</option>
+            <option value="Required" {"selected" if save_year=="Required" else ""}>Required</option>
+          </select>
+        </div>
+        <div class="field" style="width:150px;">
+          <label>Embeds Color</label>
+          <input type="color" id="bd_color" value="{color}">
+        </div>
+      </div>
+
+      <div class="section-title">Birthdays</div>
+      <h3>Birthday Card</h3><br>
+      <div class="card">
+        <div class="toggle-row">
+          <div class="toggle-info"><h4>Enable Custom Card</h4><p>Enable and setup a custom birthday card graphic template alignment.</p></div>
+          <label class="toggle"><input type="checkbox" id="bd_custom_card" {custom_card}> <span class="toggle-slider"></span></label>
+        </div>
+      </div>
+
+      <div class="section-title">Birthdays</div>
+      <h3>Birthday Message</h3><br>
+      <div class="card">
+        <div class="toggle-row">
+          <div class="toggle-info"><h4>Send message on Birthday</h4><p>Enable this option to automatically send a message on a birthday.</p></div>
+          <label class="toggle"><input type="checkbox" id="bd_send_msg" {send_msg}> <span class="toggle-slider"></span></label>
+        </div>
+      </div>
+
+      <div class="section-title">Birthdays</div>
+      <h3>Add Role on Birthday</h3><br>
+      <div class="card">
+        <div class="toggle-row">
+          <div class="toggle-info"><h4>Add a Role on Birthday</h4><p>Enable this option to add a role to the user during their birthday for 24 hours.</p></div>
+          <label class="toggle"><input type="checkbox" id="bd_add_role" {add_role}> <span class="toggle-slider"></span></label>
+        </div>
+      </div>
+
+      <div class="section-title">Birthdays</div>
+      <h3>/birthday showcase Command</h3><br>
+      <div class="card">
+        <div class="toggle-row">
+          <div class="toggle-info"><h4>Enable /birthday showcase Command</h4><p>Allow users celebrating their birthday to send a pre-set message in the channel.</p></div>
+          <label class="toggle"><input type="checkbox" id="bd_showcase" {enable_showcase}> <span class="toggle-slider"></span></label>
+        </div>
+      </div>
+
+      <div class="section-title">Birthdays</div>
+      <h3>Commands Permissions</h3><br>
+      <div class="card">
+        <div class="field"><label>Admin Roles</label><input type="text" id="bd_admin_roles" value="{admin_roles}" placeholder="Click + or add Admin Role IDs"></div>
+        <div class="field">
+          <label>Channel Restrictions - Blacklist Type</label>
+          <select id="bd_ch_restrict">
+            <option value="No channel restrictions" {"selected" if ch_restrict=="No channel restrictions" else ""}>No channel restrictions</option>
+            <option value="Blacklist" {"selected" if ch_restrict=="Blacklist" else ""}>Blacklist Channels</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Role Restrictions - Blacklist Type</label>
+          <select id="bd_role_restrict">
+            <option value="No role restrictions" {"selected" if role_restrict=="No role restrictions" else ""}>No role restrictions</option>
+            <option value="Blacklist" {"selected" if role_restrict=="Blacklist" else ""}>Blacklist Roles</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-title">Module</div>
+      <h3>Commands</h3><br>
+      <div class="grid-blocks">
+        <div class="block-item"><div><strong>/birthday set</strong><p style="font-size:12px;color:var(--sub);">Save your birthday!</p></div><label class="toggle"><input type="checkbox" id="cmd_set" {cmd_set}><span class="toggle-slider"></span></label></div>
+        <div class="block-item"><div><strong>/birthday remove</strong><p style="font-size:12px;color:var(--sub);">Remove your birthday</p></div><label class="toggle"><input type="checkbox" id="cmd_remove" {cmd_remove}><span class="toggle-slider"></span></label></div>
+        <div class="block-item"><div><strong>/birthday view</strong><p style="font-size:12px;color:var(--sub);">View yours or someone else's birthday!</p></div><label class="toggle"><input type="checkbox" id="cmd_view" {cmd_view}><span class="toggle-slider"></span></label></div>
+        <div class="block-item"><div><strong>/birthday upcoming</strong><p style="font-size:12px;color:var(--sub);">View all next birthdays!</p></div><label class="toggle"><input type="checkbox" id="cmd_upcoming" {cmd_upcoming}><span class="toggle-slider"></span></label></div>
+        <div class="block-item"><div><strong>/birthday showcase</strong><p style="font-size:12px;color:var(--sub);">Flex off your birthday!</p></div><label class="toggle"><input type="checkbox" id="cmd_showcase" {cmd_showcase}><span class="toggle-slider"></span></label></div>
+        <div class="block-item"><div><strong>/birthday user-manage</strong><p style="font-size:12px;color:var(--sub);">Manage someone's birthday!</p></div><label class="toggle"><input type="checkbox" id="cmd_manage" {cmd_manage}><span class="toggle-slider"></span></label></div>
+      </div>
+      <br><button type="button" class="btn btn-secondary">+ Add Command</button>
+
+      <div class="section-title">Module</div>
+      <h3>Events</h3><br>
+      <div class="grid-blocks">
+        <div class="block-item"><div><strong>Birthdays Handler</strong><p style="font-size:12px;color:var(--sub);">When a timed event is executed</p></div><label class="toggle"><input type="checkbox" id="evt_handler" {evt_handler}><span class="toggle-slider"></span></label></div>
+        <div class="block-item"><div><strong>Leaves Handler</strong><p style="font-size:12px;color:var(--sub);">When a user leaves or is kicked</p></div><label class="toggle"><input type="checkbox" id="evt_leaves" {evt_leaves}><span class="toggle-slider"></span></label></div>
+      </div>
+      <br><button type="button" class="btn btn-secondary">+ Add Event</button>
+
+      <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Birthday Config</button></div>
+    </form>
+    <div id="toast_bday" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Birthday settings synchronized live!</div>
+    <script>
+    function saveBirthdays(e){{
+      e.preventDefault();
+      fetch('/api/birthdays/save', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{
+          timezone: document.getElementById('bd_tz').value,
+          time: document.getElementById('bd_time').value,
+          save_year: document.getElementById('bd_save_year').value,
+          embed_color: document.getElementById('bd_color').value,
+          custom_card: document.getElementById('bd_custom_card').checked,
+          send_msg: document.getElementById('bd_send_msg').checked,
+          add_role: document.getElementById('bd_add_role').checked,
+          enable_showcase: document.getElementById('bd_showcase').checked,
+          admin_roles: document.getElementById('bd_admin_roles').value,
+          ch_restrict: document.getElementById('bd_ch_restrict').value,
+          role_restrict: document.getElementById('bd_role_restrict').value,
+          cmd_set: document.getElementById('cmd_set').checked,
+          cmd_remove: document.getElementById('cmd_remove').checked,
+          cmd_view: document.getElementById('cmd_view').checked,
+          cmd_upcoming: document.getElementById('cmd_upcoming').checked,
+          cmd_showcase: document.getElementById('cmd_showcase').checked,
+          cmd_manage: document.getElementById('cmd_manage').checked,
+          evt_handler: document.getElementById('evt_handler').checked,
+          evt_leaves: document.getElementById('evt_leaves').checked
+        }})
+      }}).then(() => {{
+         var t = document.getElementById('toast_bday'); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
+      }});
+    }}
+    </script>
+    """
+    return render('birthdays', 'General Settings', 'Wish your members a Happy Birthday!', body)
+
+@app.route('/api/birthdays/save', methods=['POST'])
+def api_birthdays_save():
+    gid = get_gid() or 'default'
+    cfg = load('config.json')
+    cfg.setdefault(gid, {}).update({{'birthdays': request.json}})
+    save('config.json', cfg)
+    return jsonify({'ok': True})
+
+# ══════════════════════════════════════════════════════════
+#  AI SETTINGS & CUSTOM EMOJIS
 # ══════════════════════════════════════════════════════════
 @app.route('/ai-settings')
 def ai_settings():
@@ -437,12 +748,10 @@ def ai_settings():
     custom_emojis = cfg.get('custom_external_emojis', {})
     emoji_rows = ''
     for name, url in custom_emojis.items():
-        s_name = safe_jinja(name)
-        s_url = safe_jinja(url)
         emoji_rows += f"""
         <div class="lb-row">
-            <div class="lb-name"><img src="{s_url}" style="width:24px;height:24px;border-radius:4px;margin-right:8px;vertical-align:middle"><b>:{s_name}:</b></div>
-            <div class="lb-val"><button type="button" onclick="deleteEmoji('{s_name}')" style="background:#ed4245;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer">Remove</button></div>
+            <div class="lb-name"><img src="{url}" style="width:24px;height:24px;border-radius:4px;margin-right:8px;vertical-align:middle"><b>:{name}:</b></div>
+            <div class="lb-val"><button onclick="deleteEmoji('{name}')" style="background:#ed4245;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer">Remove</button></div>
         </div>"""
     if not emoji_rows:
         emoji_rows = '<div class="lb-empty">No custom external emojis added yet</div>'
@@ -456,40 +765,37 @@ def ai_settings():
       </div>
       <div class="card-body">
         <div class="toggle-row">
-          <div class="toggle-info"><h4>Reply on Mention / Reply</h4><p>Should the AI answer when someone pings or replies to its messages?</p></div>
+          <div class="toggle-info"><h4>Reply on Mention / Reply</h4><p>Should the AI answer when someone pings or replies to its messages (like Level Up alerts)?</p></div>
           <label class="toggle"><input type="checkbox" id="ai_reply_on_mention" {reply_on}><span class="toggle-slider"></span></label>
         </div>
         <div class="toggle-row">
           <div class="toggle-info"><h4>Auto Emoji Reactions</h4><p>Allow the AI to automatically place smart emojis on messages</p></div>
           <label class="toggle"><input type="checkbox" id="ai_auto_emojis" {emojis_on}><span class="toggle-slider"></span></label>
         </div>
-        
-        <div class="btn-save-row">
-          <button type="submit" class="btn btn-primary">Save Settings</button>
-        </div>
       </div>
+    </div>
+    <div class="btn-save-row">
+      <button type="submit" class="btn btn-primary">Save Settings</button>
     </div>
     </form>
 
-    <div class="card">
-      <div class="card-header"><h3>✨ Add External Emojis (Not in Discord Guild)</h3></div>
+    <div class="card" style="margin-top:24px">
+      <div class="card-header"><h3>✨ Add External Emojis</h3></div>
       <div class="card-body">
         <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px">
           <div class="field"><label>Emoji Name</label><input type="text" id="em_name" placeholder="pepe_smile"></div>
-          <div class="field"><label>Image URL (PNG/JPG Link)</label><input type="text" id="em_url" placeholder="https://example.com/image.png"></div>
+          <div class="field"><label>Image URL</label><input type="text" id="em_url" placeholder="https://example.com/image.png"></div>
         </div>
-        <button type="button" onclick="addEmoji()" class="btn btn-primary" style="background:#57f287;color:black;font-weight:bold;">Add External Emoji</button>
-        
+        <button onclick="addEmoji()" class="btn btn-primary" style="background:#57f287;color:black;font-weight:bold;">Add External Emoji</button>
         <div style="margin-top:20px">
             <h4>Current Custom External Emojis:</h4>
             {emoji_rows}
         </div>
       </div>
     </div>
-
-    <div id="toast_ai" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Updated!</div>
-
+    <div id="toast" style="display:none;position:fixed;bottom:24px;right:24px;background:#57f287;color:#000;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Updated!</div>
     <script>
+    function showToast(){{var t=document.getElementById('toast'); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);}}
     function saveAiSettings(e){{
       e.preventDefault();
       fetch('/api/ai/save',{{
@@ -500,26 +806,15 @@ def ai_settings():
           ai_reply_on_mention: document.getElementById('ai_reply_on_mention').checked,
           ai_auto_emojis: document.getElementById('ai_auto_emojis').checked
         }})
-      }}).then(()=> {{
-         var t = document.getElementById('toast_ai'); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
-      }});
+      }}).then(()=>showToast());
     }}
-    function addEmoji() {{
-      var name = document.getElementById('em_name').value;
-      var url = document.getElementById('em_url').value;
+    function addEmoji(){{
+      var name = document.getElementById('em_name').value; var url = document.getElementById('em_url').value;
       if(!name || !url) return alert('Please fill both fields!');
-      fetch('/api/ai/emoji/add',{{
-        method:'POST',
-        headers:{{'Content-Type':'application/json'}},
-        body:JSON.stringify({{name:name, url:url}})
-      }}).then(()=>location.reload());
+      fetch('/api/ai/emoji/add',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{name:name, url:url}})}}).then(()=>location.reload());
     }}
     function deleteEmoji(name){{
-      fetch('/api/ai/emoji/delete',{{
-        method:'POST',
-        headers:{{'Content-Type':'application/json'}},
-        body:JSON.stringify({{name:name}})
-      }}).then(()=>location.reload());
+      fetch('/api/ai/emoji/delete',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{name:name}})}}).then(()=>location.reload());
     }}
     </script>
     """
@@ -531,9 +826,6 @@ def api_ai_save():
     cfg = load('config.json')
     cfg.setdefault(gid, {}).update(request.json)
     save('config.json', cfg)
-    import builtins
-    if hasattr(builtins, 'refresh_bot_cache'): 
-        builtins.refresh_bot_cache()
     return jsonify({'ok':True})
 
 @app.route('/api/ai/emoji/add', methods=['POST'])
@@ -542,9 +834,6 @@ def api_ai_emoji_add():
     cfg = load('config.json')
     cfg.setdefault(gid, {}).setdefault('custom_external_emojis', {})[request.json['name']] = request.json['url']
     save('config.json', cfg)
-    import builtins
-    if hasattr(builtins, 'refresh_bot_cache'): 
-        builtins.refresh_bot_cache()
     return jsonify({'ok':True})
 
 @app.route('/api/ai/emoji/delete', methods=['POST'])
@@ -554,129 +843,7 @@ def api_ai_emoji_delete():
     if gid in cfg and 'custom_external_emojis' in cfg[gid]:
         cfg[gid]['custom_external_emojis'].pop(request.json['name'], None)
         save('config.json', cfg)
-    import builtins
-    if hasattr(builtins, 'refresh_bot_cache'): 
-        builtins.refresh_bot_cache()
     return jsonify({'ok':True})
-
-# ══════════════════════════════════════════════════════════
-#  QOTD / FOTD / SOTD / ROTD PAGES
-# ══════════════════════════════════════════════════════════
-def generate_daily_route(module_name, emoji, title, default_msg):
-    data_file = f"{module_name}.json"
-    gid = get_gid() or 'default'
-    data = load(data_file).get(gid, {})
-    
-    enabled = 'checked' if data.get('enabled', False) else ''
-    private_mode = 'checked' if data.get('private_mode', False) else ''
-    channel = safe_jinja(data.get('channel', ''))
-    roles = safe_jinja(data.get('roles', ''))
-    msg = safe_jinja(data.get('message', default_msg))
-    thread_name = safe_jinja(data.get('thread_name', '📌 Leave your replies here!'))
-    duration = data.get('duration', '1440')
-    slowmode = safe_jinja(data.get('slowmode', '0'))
-    
-    duration_opts = f"""
-    <option value="1440" {'selected' if duration=='1440' else ''}>One Day (24 Hours)</option>
-    <option value="4320" {'selected' if duration=='4320' else ''}>Three Days</option>
-    <option value="10080" {'selected' if duration=='10080' else ''}>One Week</option>
-    """
-    
-    body = f"""
-    <form id="{module_name}Form" onsubmit="saveDaily(event, '{module_name}')">
-    <div class="card">
-      <div class="card-header"><div><h3>Main Settings</h3><p>Configure channel binding and core automation</p></div></div>
-      <div class="card-body">
-        <div class="toggle-row">
-          <div class="toggle-info"><h4>Enable {module_name.upper()} Module</h4><p>Turn automated {title} delivery system status</p></div>
-          <label class="toggle"><input type="checkbox" id="daily_enabled" {enabled}> <span class="toggle-slider"></span></label>
-        </div>
-        <div class="field" style="margin-top:20px;"><label>{module_name.upper()} Target Channel ID</label><input type="text" id="daily_channel" value="{channel}" placeholder="123456789012345678"></div>
-        <div class="field"><label>Mentioned Roles ID</label><input type="text" id="daily_roles" value="{roles}" placeholder="123456789012345678"></div>
-        <div class="toggle-row">
-          <div class="toggle-info"><h4>Private Mode</h4><p>When enabled, only targeted role mentions will gain communication permissions in threads</p></div>
-          <label class="toggle"><input type="checkbox" id="daily_private" {private_mode}> <span class="toggle-slider"></span></label>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header"><div><h3>Announcement & Thread Configuration</h3><p>Customize system dispatch text structures</p></div></div>
-      <div class="card-body">
-        <div class="field"><label>{module_name.upper()} Broadcast Template Message</label><textarea id="daily_message" rows="4">{msg}</textarea></div>
-        <div class="field"><label>Created Dynamic Thread Title</label><input type="text" id="daily_thread_name" value="{thread_name}"></div>
-        <div class="field"><label>Thread Active Lifespan Duration</label><select id="daily_duration">{duration_opts}</select></div>
-        <div class="field"><label>Thread Interval Slowmode Constraint (seconds)</label><input type="number" id="daily_slowmode" value="{slowmode}"></div>
-        
-        <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save {module_name.upper()} Configs</button></div>
-      </div>
-    </div>
-    </form>
-    
-    <div id="toast_{module_name}" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ {module_name.upper()} configs updated and live!</div>
-    
-    <script>
-    function saveDaily(e, mod){{
-      e.preventDefault();
-      fetch('/api/' + mod + '/save', {{
-        method: 'POST',
-        headers: {{ 'Content-Type': 'application/json' }},
-        body: JSON.stringify({{
-          enabled: document.getElementById('daily_enabled').checked,
-          channel: document.getElementById('daily_channel').value,
-          roles: document.getElementById('daily_roles').value,
-          private_mode: document.getElementById('daily_private').checked,
-          message: document.getElementById('daily_message').value,
-          thread_name: document.getElementById('daily_thread_name').value,
-          duration: document.getElementById('daily_duration').value,
-          slowmode: document.getElementById('daily_slowmode').value
-        }})
-      }}).then(() => {{
-         var t = document.getElementById('toast_' + mod); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
-      }});
-    }}
-    </script>
-    """
-    return render(module_name, f"{emoji} {title} Control panel", f"Manage automated {module_name.upper()} definitions, structural content templates, and timing schedules", body)
-
-def api_daily_save(module_name):
-    gid = get_gid() or 'default'
-    data_file = f"{module_name}.json"
-    cfg = load(data_file)
-    cfg.setdefault(gid, {}).update(request.json)
-    save(data_file, cfg)
-    import builtins
-    if hasattr(builtins, 'refresh_bot_cache'): 
-        builtins.refresh_bot_cache()
-    return jsonify({'ok': True})
-
-@app.route('/qotd')
-def qotd():
-    return generate_daily_route('qotd', '❓', 'Question Of The Day', 'It is {day}, and time for a new daily question for you all to answer! If you would like to participate, check the question below, and feel free to leave any comments and replies in the thread below this post. The question of today is:\n\n"{question}"')
-
-@app.route('/api/qotd/save', methods=['POST'])
-def api_qotd_save(): return api_daily_save('qotd')
-
-@app.route('/fotd')
-def fotd():
-    return generate_daily_route('fotd', '💡', 'Fact Of The Day', 'It is {day}, and time for your daily fact! Did you know?\n\n"{fact}"')
-
-@app.route('/api/fotd/save', methods=['POST'])
-def api_fotd_save(): return api_daily_save('fotd')
-
-@app.route('/sotd')
-def sotd():
-    return generate_daily_route('sotd', '🎵', 'Song Of The Day', 'It is {day}, and here is the Song of the Day! Enjoy listening:\n\n"{song}"')
-
-@app.route('/api/sotd/save', methods=['POST'])
-def api_sotd_save(): return api_daily_save('sotd')
-
-@app.route('/rotd')
-def rotd():
-    return generate_daily_route('rotd', '🧩', 'Riddle Of The Day', 'It is {day}, and here is your Riddle of the Day! Can you solve it?\n\n"{riddle}"')
-
-@app.route('/api/rotd/save', methods=['POST'])
-def api_rotd_save(): return api_daily_save('rotd')
 
 # ══════════════════════════════════════════════════════════
 #  SMASH KARTS PAGE
