@@ -43,7 +43,7 @@ def resolve_name(uid, lvl_data):
             return user.display_name
     return f"User {uid}"
 
-def render(route, title, desc, body):
+def render(route, title, desc, body, is_enabled=True):
     return render_template_string("""
     <!DOCTYPE html>
     <html>
@@ -67,6 +67,14 @@ def render(route, title, desc, body):
         .header p { font-size: 14px; color: var(--sub); margin-top: 4px; }
         
         .content { flex: 1; padding: 32px; overflow-y: auto; }
+        
+        /* Disabled Module Wrapper Styles */
+        fieldset[disabled] {
+          opacity: 0.35;
+          pointer-events: none;
+          cursor: not-allowed;
+        }
+        
         .card { background: var(--b-mid); border-radius: 8px; border: 1px solid #232428; padding: 24px; margin-bottom: 24px; }
         .card-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #3f4248; padding-bottom: 16px; margin-bottom: 20px; }
         .card-header h3 { font-size: 18px; color: #fff; }
@@ -131,17 +139,93 @@ def render(route, title, desc, body):
             <p>{{ desc }}</p>
           </div>
           <div>
-            <button class="btn btn-secondary" style="background:#da373c; font-weight:600;">Reset to Default</button>
-            <button class="btn" style="background:#23a55a; font-weight:600; margin-left:8px;">Enable</button>
+            <button class="btn btn-secondary" style="background:#da373c; font-weight:600;" onclick="resetModule('{{ route }}')">Reset to Default</button>
+            <button class="btn" style="background: {% if is_enabled %}#4e5058{% else %}#23a55a{% endif %}; font-weight:600; margin-left:8px;" onclick="toggleModule('{{ route }}', {{ 'true' if is_enabled else 'false' }})">
+              {% if is_enabled %}Disable{% else %}Enable{% endif %}
+            </button>
           </div>
         </div>
         <div class="content">
-          {{ body|safe }}
+          <fieldset id="global-module-fieldset" style="border:none; padding:0; margin:0;" {% if not is_enabled %}disabled{% endif %}>
+            {{ body|safe }}
+          </fieldset>
         </div>
       </div>
+
+      <script>
+        function toggleModule(route, currentStatus) {
+          fetch('/api/module/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ route: route, enabled: !currentStatus })
+          }).then(() => location.reload());
+        }
+        function resetModule(route) {
+          if (confirm('Сигурен ли си, че искаш да занулиш настройките на този модул по подразбиране?')) {
+            fetch('/api/module/reset', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ route: route })
+            }).then(() => location.reload());
+          }
+        }
+      </script>
     </body>
     </html>
-    """, route=route, title=title, desc=desc, body=body)
+    """, route=route, title=title, desc=desc, body=body, is_enabled=is_enabled)
+
+# ══════════════════════════════════════════════════════════
+#  GLOBAL MODULE STATE SYNC CONTROL
+# ══════════════════════════════════════════════════════════
+@app.route('/api/module/toggle', methods=['POST'])
+def api_module_toggle():
+    data = request.json
+    route = data.get('route')
+    status = data.get('enabled')
+    gid = get_gid() or 'default'
+    
+    if route == 'counting':
+        c_cfg = load('counting.json')
+        c_cfg.setdefault(gid, {})['enabled'] = status
+        save('counting.json', c_cfg)
+    elif route in ['qotd', 'birthdays']:
+        cfg = load('config.json')
+        cfg.setdefault(gid, {}).setdefault(route, {})['enabled'] = status
+        save('config.json', cfg)
+    else:
+        cfg = load('config.json')
+        key = 'ai_enabled' if route == 'ai-settings' else f"{route}_enabled"
+        cfg.setdefault(gid, {})[key] = status
+        save('config.json', cfg)
+        
+    return jsonify({'ok': True})
+
+@app.route('/api/module/reset', methods=['POST'])
+def api_module_reset():
+    data = request.json
+    route = data.get('route')
+    gid = get_gid() or 'default'
+    
+    if route == 'counting':
+        c_cfg = load('counting.json')
+        c_cfg[gid] = {"count": 0, "high_score": 0, "enabled": False}
+        save('counting.json', c_cfg)
+    elif route in ['qotd', 'birthdays']:
+        cfg = load('config.json')
+        if gid in cfg and route in cfg[gid]:
+            cfg[gid][route] = {"enabled": False}
+        save('config.json', cfg)
+    else:
+        cfg = load('config.json')
+        if gid in cfg:
+            keys = []
+            if route == 'moderation': keys = ['automod_enabled', 'block_invites', 'log_channel', 'banned_words', 'moderation_enabled']
+            elif route == 'levels': keys = ['enable_levelup_message', 'enable_voice_xp', 'levelup_type', 'level_channel', 'levelup_message', 'levels_enabled']
+            elif route == 'ai-settings': keys = ['ai_enabled', 'ai_reply_on_mention', 'ai_auto_emojis']
+            for k in keys: cfg[gid].pop(k, None)
+        save('config.json', cfg)
+        
+    return jsonify({'ok': True})
 
 # ══════════════════════════════════════════════════════════
 #  MODERATION PAGE
@@ -152,6 +236,7 @@ def moderation():
     gid = get_gid() or 'default'
     cfg = load('config.json').get(gid, {})
     
+    is_enabled = cfg.get('moderation_enabled', True)
     automod_on = 'checked' if cfg.get('automod_enabled', False) else ''
     invite_block_on = 'checked' if cfg.get('block_invites', False) else ''
     banned_words = cfg.get('banned_words', "")
@@ -203,7 +288,7 @@ def moderation():
     }}
     </script>
     """
-    return render('moderation', '🛡️ Moderation Settings', 'Control automod configurations, blacklisted word definitions, and execution protocols', body)
+    return render('moderation', '🛡️ Moderation Settings', 'Control automod configurations, blacklisted word definitions, and execution protocols', body, is_enabled=is_enabled)
 
 @app.route('/api/moderation/save', methods=['POST'])
 def api_moderation_save():
@@ -221,6 +306,7 @@ def levels():
     gid = get_gid() or 'default'
     cfg = load('config.json').get(gid, {})
     
+    is_enabled = cfg.get('levels_enabled', True)
     lvl_msg_on = 'checked' if cfg.get('enable_levelup_message', True) else ''
     vc_xp_on = 'checked' if cfg.get('enable_voice_xp', True) else ''
     
@@ -304,7 +390,7 @@ def levels():
     }}
     </script>
     """
-    return render('levels', '⭐ Leveling System', 'Manage configurations and track active user XP records', body)
+    return render('levels', '⭐ Leveling System', 'Manage configurations and track active user XP records', body, is_enabled=is_enabled)
 
 @app.route('/api/levels/save', methods=['POST'])
 def api_levels_save():
@@ -322,10 +408,11 @@ def counting():
     gid = get_gid() or 'default'
     c_data = load('counting.json').get(gid, {})
     
+    is_enabled = c_data.get('enabled', False)
     current_count = c_data.get('count', 0)
     high_score = c_data.get('high_score', 0)
     
-    counting_on = 'checked' if c_data.get('enabled', False) else ''
+    counting_on = 'checked' if is_enabled else ''
     same_user_on = 'checked' if c_data.get('allow_same_user', False) else ''
     shame_role_on = 'checked' if c_data.get('shame_role', False) else ''
     delete_invalid_on = 'checked' if c_data.get('delete_invalid', False) else ''
@@ -406,7 +493,7 @@ def counting():
     }}
     </script>
     """
-    return render('counting', '🔢 Counting System', 'Real-time synchronization data tracking counting parameters', body)
+    return render('counting', '🔢 Counting System', 'Real-time synchronization data tracking counting parameters', body, is_enabled=is_enabled)
 
 @app.route('/api/counting/save', methods=['POST'])
 def api_counting_save():
@@ -424,6 +511,7 @@ def qotd():
     gid = get_gid() or 'default'
     cfg = load('config.json').get(gid, {}).get('qotd', {})
     
+    is_enabled = cfg.get('enabled', True)
     channel = cfg.get('channel', '')
     roles = cfg.get('roles', '')
     private_mode = 'checked' if cfg.get('private_mode', False) else ''
@@ -513,6 +601,7 @@ def qotd():
         method: 'POST',
         headers: {{ 'Content-Type': 'application/json' }},
         body: JSON.stringify({{
+          enabled: true,
           channel: document.getElementById('qotd_channel').value,
           roles: document.getElementById('qotd_roles').value,
           private_mode: document.getElementById('qotd_private').checked,
@@ -533,13 +622,13 @@ def qotd():
     }}
     </script>
     """
-    return render('qotd', 'Main Settings', 'Boost the engagement of your server with daily questions to answer!', body)
+    return render('qotd', 'Main Settings', 'Boost the engagement of your server with daily questions to answer!', body, is_enabled=is_enabled)
 
 @app.route('/api/qotd/save', methods=['POST'])
 def api_qotd_save():
     gid = get_gid() or 'default'
     cfg = load('config.json')
-    cfg.setdefault(gid, {})['qotd'] = request.json
+    cfg.setdefault(gid, {}).setdefault('qotd', {}).update(request.json)
     save('config.json', cfg)
     return jsonify({'ok': True})
 
@@ -551,6 +640,7 @@ def birthdays():
     gid = get_gid() or 'default'
     cfg = load('config.json').get(gid, {}).get('birthdays', {})
     
+    is_enabled = cfg.get('enabled', True)
     tz = cfg.get('timezone', 'UTC±0:00 [London]')
     time_send = cfg.get('time', '12:00 - 12 PM [Midday]')
     save_year = cfg.get('save_year', 'Enabled')
@@ -565,7 +655,6 @@ def birthdays():
     ch_restrict = cfg.get('ch_restrict', 'No channel restrictions')
     role_restrict = cfg.get('role_restrict', 'No role restrictions')
     
-    # Команди
     cmd_set = 'checked' if cfg.get('cmd_set', True) else ''
     cmd_remove = 'checked' if cfg.get('cmd_remove', True) else ''
     cmd_view = 'checked' if cfg.get('cmd_view', True) else ''
@@ -573,7 +662,6 @@ def birthdays():
     cmd_showcase = 'checked' if cfg.get('cmd_showcase', True) else ''
     cmd_manage = 'checked' if cfg.get('cmd_manage', True) else ''
     
-    # Събития
     evt_handler = 'checked' if cfg.get('evt_handler', True) else ''
     evt_leaves = 'checked' if cfg.get('evt_leaves', True) else ''
 
@@ -697,6 +785,7 @@ def birthdays():
         method: 'POST',
         headers: {{ 'Content-Type': 'application/json' }},
         body: JSON.stringify({{
+          enabled: true,
           timezone: document.getElementById('bd_tz').value,
           time: document.getElementById('bd_time').value,
           save_year: document.getElementById('bd_save_year').value,
@@ -723,13 +812,13 @@ def birthdays():
     }}
     </script>
     """
-    return render('birthdays', 'General Settings', 'Wish your members a Happy Birthday!', body)
+    return render('birthdays', 'General Settings', 'Wish your members a Happy Birthday!', body, is_enabled=is_enabled)
 
 @app.route('/api/birthdays/save', methods=['POST'])
 def api_birthdays_save():
     gid = get_gid() or 'default'
     cfg = load('config.json')
-    cfg.setdefault(gid, {}).update({{'birthdays': request.json}})
+    cfg.setdefault(gid, {}).setdefault('birthdays', {}).update(request.json)
     save('config.json', cfg)
     return jsonify({'ok': True})
 
@@ -741,7 +830,8 @@ def ai_settings():
     gid = get_gid() or 'default'
     cfg = load('config.json').get(gid, {})
     
-    ai_on = 'checked' if cfg.get('ai_enabled', True) else ''
+    is_enabled = cfg.get('ai_enabled', True)
+    ai_on = 'checked' if is_enabled else ''
     reply_on = 'checked' if cfg.get('ai_reply_on_mention', True) else ''
     emojis_on = 'checked' if cfg.get('ai_auto_emojis', True) else ''
     
@@ -818,7 +908,7 @@ def ai_settings():
     }}
     </script>
     """
-    return render('ai-settings', 'AI Assistant', 'Configure AI actions and external emojis', body)
+    return render('ai-settings', 'AI Assistant', 'Configure AI actions and external emojis', body, is_enabled=is_enabled)
 
 @app.route('/api/ai/save', methods=['POST'])
 def api_ai_save():
@@ -866,7 +956,7 @@ def smashkarts():
         lb_rows = '<div class="lb-empty">No active matches recorded yet.</div>'
 
     body = f"""<div class="card"><div class="card-header"><h3>🏎️ Competitive Leaderboard</h3></div><div class="card-body">{lb_rows}</div></div>"""
-    return render('smashkarts', '🏎️ Smash Karts Statistics', 'Global race metrics and win record compilations', body)
+    return render('smashkarts', '🏎️ Smash Karts Statistics', 'Global race metrics and win record compilations', body, is_enabled=True)
 
 # ══════════════════════════════════════════════════════════
 #  STORY MODE PAGE
@@ -885,7 +975,7 @@ def story():
       </div>
     </div>
     """
-    return render('story', '📖 Story Adventure Mode', 'Track server generated text simulations and interactive histories', body)
+    return render('story', '📖 Story Adventure Mode', 'Track server generated text simulations and interactive histories', body, is_enabled=True)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
