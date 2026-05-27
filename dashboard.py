@@ -161,7 +161,7 @@ def render(route, title, desc, body, is_enabled=True):
           }).then(() => location.reload());
         }
         function resetModule(route) {
-          if (confirm('Сигурен ли си, че искаш да занулиш настройките на този модул по подразбиране?')) {
+          if (confirm('Are you sure you want to reset this module configuration back to its default settings?')) {
             fetch('/api/module/reset', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
