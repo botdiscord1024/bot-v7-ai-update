@@ -27,7 +27,7 @@ def get_level_from_xp(xp):
 def get_gid():
     bot = current_app.config.get('BOT')
     if bot and hasattr(bot, 'cached_data'):
-        for key in ['moderation', 'levels', 'counting', 'smashkarts', 'story']:
+        for key in ['moderation', 'levels', 'counting', 'smashkarts', 'story', 'welcomer']:
             d = bot.cached_data.get(key, {})
             if d:
                 return list(d.keys())[0]
@@ -68,7 +68,6 @@ def render(route, title, desc, body, is_enabled=True):
         
         .content { flex: 1; padding: 32px; overflow-y: auto; }
         
-        /* Disabled Module Wrapper Styles */
         fieldset[disabled] {
           opacity: 0.35;
           pointer-events: none;
@@ -80,13 +79,11 @@ def render(route, title, desc, body, is_enabled=True):
         .card-header h3 { font-size: 18px; color: #fff; }
         .card-header p { font-size: 13px; color: var(--sub); margin-top: 2px; }
         
-        /* Form Controls */
         .field { margin-bottom: 20px; }
         .field label { display: block; font-size: 12px; font-weight: 700; color: var(--sub); text-transform: uppercase; margin-bottom: 8px; }
         .field input, .field select, .field textarea { width: 100%; background: var(--b-dark); border: 1px solid #111214; padding: 10px; border-radius: 4px; color: #fff; font-size: 14px; }
         .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); outline: none; }
         
-        /* Toggles */
         .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid #2e3035; }
         .toggle-row:last-child { border-bottom: none; }
         .toggle-info h4 { margin: 0; font-size: 15px; color: #fff; }
@@ -98,12 +95,10 @@ def render(route, title, desc, body, is_enabled=True):
         input:checked + .toggle-slider { background-color: #23a55a; }
         input:checked + .toggle-slider:before { transform: translateX(22px); }
         
-        /* Grid Layout Utilities */
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .grid-blocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
         .block-item { background: var(--b-dark); border: 1px solid #111214; padding: 16px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
         
-        /* Leaderboards & Lists */
         .lb-row { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--b-light); border-radius: 4px; margin-bottom: 8px; }
         .lb-name { display: flex; align-items: center; font-size: 14px; }
         .lb-val { font-size: 14px; color: var(--sub); font-weight: 600; }
@@ -124,6 +119,7 @@ def render(route, title, desc, body, is_enabled=True):
       <div class="sidebar">
         <div class="brand">👑 Admin Panel</div>
         <a href="/moderation" class="nav-item {% if route=='moderation' %}active{% endif %}">🛡️ Moderation</a>
+        <a href="/welcomer" class="nav-item {% if route=='welcomer' %}active{% endif %}">👋 Welcomer</a>
         <a href="/levels" class="nav-item {% if route=='levels' %}active{% endif %}">⭐ Leveling System</a>
         <a href="/counting" class="nav-item {% if route=='counting' %}active{% endif %}">🔢 Counting Game</a>
         <a href="/qotd" class="nav-item {% if route=='qotd' %}active{% endif %}">❓ Question Of The Day</a>
@@ -188,7 +184,7 @@ def api_module_toggle():
         c_cfg = load('counting.json')
         c_cfg.setdefault(gid, {})['enabled'] = status
         save('counting.json', c_cfg)
-    elif route in ['qotd', 'birthdays']:
+    elif route in ['qotd', 'birthdays', 'welcomer']:
         cfg = load('config.json')
         cfg.setdefault(gid, {}).setdefault(route, {})['enabled'] = status
         save('config.json', cfg)
@@ -210,7 +206,7 @@ def api_module_reset():
         c_cfg = load('counting.json')
         c_cfg[gid] = {"count": 0, "high_score": 0, "enabled": False}
         save('counting.json', c_cfg)
-    elif route in ['qotd', 'birthdays']:
+    elif route in ['qotd', 'birthdays', 'welcomer']:
         cfg = load('config.json')
         if gid in cfg and route in cfg[gid]:
             cfg[gid][route] = {"enabled": False}
@@ -225,6 +221,126 @@ def api_module_reset():
             for k in keys: cfg[gid].pop(k, None)
         save('config.json', cfg)
         
+    return jsonify({'ok': True})
+
+# ══════════════════════════════════════════════════════════
+#  WELCOMER MODULE PAGE
+# ══════════════════════════════════════════════════════════
+@app.route('/welcomer')
+def welcomer():
+    gid = get_gid() or 'default'
+    cfg = load('config.json').get(gid, {}).get('welcomer', {})
+    
+    is_enabled = cfg.get('enabled', True)
+    channel = cfg.get('channel', '')
+    message = cfg.get('message', 'Welcome {user.mention} to **{server.name}**! You are our member #{member_count}!')
+    
+    embed_on = 'checked' if cfg.get('embed_enabled', False) else ''
+    embed_title = cfg.get('embed_title', 'Welcome to the server!')
+    embed_color = cfg.get('embed_color', '#5865f2')
+    
+    dm_on = 'checked' if cfg.get('dm_enabled', False) else ''
+    dm_msg = cfg.get('dm_message', 'Thanks for joining our community!')
+    
+    autorole_on = 'checked' if cfg.get('autorole_enabled', False) else ''
+    autorole_roles = cfg.get('autorole_roles', '')
+
+    body = f"""
+    <form id="welcomeForm" onsubmit="saveWelcomer(event)">
+      <div class="card">
+        <div class="card-header"><div><h3>Public Welcome Message</h3><p>Greet new members right inside your public server channels</p></div></div>
+        <div class="card-body">
+          <div class="field">
+            <label>Welcome Channel ID</label>
+            <input type="text" id="wel_channel" value="{channel}" placeholder="123456789012345678">
+          </div>
+          <div class="field">
+            <label>Plain Text Message Content (Variables: {'{user.mention}'}, {'{user.name}'}, {'{server.name}'}, {'{member_count}'})</label>
+            <textarea id="wel_message" rows="3">{message}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div><h3>Rich Embed Styling</h3><p>Convert public join announcements into a customized colored embed module</p></div>
+          <label class="toggle"><input type="checkbox" id="wel_embed_enabled" {embed_on}> <span class="toggle-slider"></span></label>
+        </div>
+        <div class="card-body">
+          <div class="field">
+            <label>Embed Title Text</label>
+            <input type="text" id="wel_embed_title" value="{embed_title}">
+          </div>
+          <div class="field" style="width: 150px;">
+            <label>Embed Theme Sideband Color</label>
+            <input type="color" id="wel_embed_color" value="{embed_color}">
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div><h3>Direct Messages (DM) On Join</h3><p>Send automated private introductory messages directly to newcomers</p></div>
+          <label class="toggle"><input type="checkbox" id="wel_dm_enabled" {dm_on}> <span class="toggle-slider"></span></label>
+        </div>
+        <div class="card-body">
+          <div class="field">
+            <label>Private DM Message Text</label>
+            <textarea id="wel_dm_message" rows="3">{dm_msg}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div><h3>Auto-Role System (Join Roles)</h3><p>Automatically allocate specified Discord roles onto accounts on initial server connection</p></div>
+          <label class="toggle"><input type="checkbox" id="wel_autorole_enabled" {autorole_on}> <span class="toggle-slider"></span></label>
+        </div>
+        <div class="card-body">
+          <div class="field">
+            <label>Target Join Role IDs (comma separated list)</label>
+            <input type="text" id="wel_autorole_roles" value="{autorole_roles}" placeholder="1234567890, 9876543210">
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Welcomer Configuration</button></div>
+    </form>
+    
+    <div id="toast_wel" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Welcomer modules updated successfully!</div>
+
+    <script>
+    function saveWelcomer(e){{
+      e.preventDefault();
+      fetch('/api/welcomer/save', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{
+          enabled: true,
+          channel: document.getElementById('wel_channel').value,
+          message: document.getElementById('wel_message').value,
+          embed_enabled: document.getElementById('wel_embed_enabled').checked,
+          embed_title: document.getElementById('wel_embed_title').value,
+          embed_color: document.getElementById('wel_embed_color').value,
+          dm_enabled: document.getElementById('wel_dm_enabled').checked,
+          dm_message: document.getElementById('wel_dm_message').value,
+          autorole_enabled: document.getElementById('wel_autorole_enabled').checked,
+          autorole_roles: document.getElementById('wel_autorole_roles').value
+        }})
+      }}).then(() => {{
+         var t = document.getElementById('toast_wel'); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
+      }});
+    }}
+    </script>
+    """
+    return render('welcomer', '👋 Welcomer Settings', 'Design clean arrival alerts, rich embedded messages, and configure automated member join workflows', body, is_enabled=is_enabled)
+
+@app.route('/api/welcomer/save', methods=['POST'])
+def api_welcomer_save():
+    gid = get_gid() or 'default'
+    cfg = load('config.json')
+    cfg.setdefault(gid, {}).setdefault('welcomer', {}).update(request.json)
+    save('config.json', cfg)
     return jsonify({'ok': True})
 
 # ══════════════════════════════════════════════════════════
