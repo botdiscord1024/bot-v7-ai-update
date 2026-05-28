@@ -7,7 +7,6 @@ import asyncio
 import google.generativeai as genai  
 from utils import load, save, err, ok
 
-GEMINI_API_KEY = "AIzaSyCd-N-s-MTjS1S7vhrVqWwHnJg0Qx-mxdI"
 genai.configure(api_key=GEMINI_API_KEY)
 
 class AIAssistant(commands.Cog):
