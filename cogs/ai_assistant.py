@@ -26,9 +26,23 @@ class AIAssistant(commands.Cog):
         gid = str(message.guild.id)
         cfg = self.get_guild_config(gid)
 
-   
         if not cfg.get('ai_enabled', True):
             return
+
+        # 🛑 --- АВТОМАТИЧНА ЗАЩИТА ОТ ИГРИ И КОМАНДИ ---
+        # Премахваме споменаването на бота от текста, за да проверим реалното съдържание
+        bot_mention = f"<@{self.bot.user.id}>"
+        bot_mention_nick = f"<@!{self.bot.user.id}>"
+        pure_text = message.content.replace(bot_mention, "").replace(bot_mention_nick, "").strip()
+
+        # 1. Ако съобщението е празна команда или започва с префикс (!, ?, /, ., $) -> Игнорирай
+        if pure_text.startswith(('!', '?', '/', '$', '.', '-', '>')):
+            return
+
+        # 2. Ако съобщението е само 1 символ/буква (опит за познаване в Бесеница) -> Игнорирай
+        if len(pure_text) == 1:
+            return
+        # ----------------------------------------------
 
         is_reply_to_bot = False
         if message.reference and message.reference.cached_message:
@@ -68,7 +82,7 @@ class AIAssistant(commands.Cog):
                     await message.reply(response.text)
                     
                 except Exception as e:
-                    await message.reply(f"? *Engine stalled! Error:* `{e}`")
+                    await message.reply(f"🎰 *Engine stalled! Error:* `{e}`")
 
     @app_commands.command(name="imagine", description="Generate a unique image using Gemini (Imagen 3)!")
     @app_commands.describe(prompt="Describe in detail what you want the AI to draw")
@@ -76,10 +90,8 @@ class AIAssistant(commands.Cog):
         await interaction.response.defer()
 
         try:
-            # ?????????? Imagen 3 ?????? ?? ?????????? ?? ???????????
             imagen = genai.ImageGenerationModel("imagen-3.0-generate-002")
             
-            # ????????? ?????? ??????????
             result = await asyncio.to_thread(
                 imagen.generate_images,
                 prompt=prompt,
@@ -87,20 +99,18 @@ class AIAssistant(commands.Cog):
                 aspect_ratio="1:1"
             )
             
-            # ??????? ????????? ?? ???????? ???????
             generated_image = result.images[0]
             image_bytes = generated_image.image_bytes
             img_file = discord.File(io.BytesIO(image_bytes), filename="gemini_artwork.png")
             
             await interaction.followup.send(
-                content=f"?? **Look what I created for you!**\n`Prompt:` *{prompt}*", 
+                content=f"🎨 **Look what I created for you!**\n`Prompt:` *{prompt}*", 
                 file=img_file
             )
                         
         except Exception as e:
             await interaction.followup.send(embed=err(f"Error drawing image: `{e}`"), ephemeral=True)
 
-    # -- ??? ???????????? ?????? ??????? ?? ???????? ----------
     @app_commands.command(name="ai_emoji", description="Use an external custom emoji from the web dashboard")
     @app_commands.describe(name="The custom name of the emoji assigned on the dashboard")
     async def ai_emoji(self, interaction: discord.Interaction, name: str):
