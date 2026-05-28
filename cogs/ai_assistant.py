@@ -4,9 +4,11 @@ from discord import app_commands
 import aiohttp
 import io
 import asyncio
-import google.generativeai as genai  
+import os
+import google.generativeai as genai
 from utils import load, save, err, ok
 
+GEMINI_API_KEY = os.environ.get("GOOGLE_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
 class AIAssistant(commands.Cog):
