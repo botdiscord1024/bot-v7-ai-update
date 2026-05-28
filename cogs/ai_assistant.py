@@ -5,7 +5,7 @@ import aiohttp
 import io
 import asyncio
 import os
-import base64  # Добавено за декодиране на генерираните изображения
+import urllib.parse  # Добавено за правилно кодиране на промпта към Pollinations
 import google.generativeai as genai
 from utils import load, save, err, ok
 
@@ -35,9 +35,11 @@ class AIAssistant(commands.Cog):
         bot_mention_nick = f"<@!{self.bot.user.id}>"
         pure_text = message.content.replace(bot_mention, "").replace(bot_mention_nick, "").strip()
 
+        # 1. Ако съобщението започва с префикс (!, ?, /, ., $, -, >) -> Игнорирай (това е команда за друг бот)
         if pure_text.startswith(('!', '?', '/', '$', '.', '-', '>')):
             return
 
+        # 2. Ако съобщението е само 1 буква (опит за познаване в Бесеница) -> Игнорирай
         if len(pure_text) == 1:
             return
         # ----------------------------------------------
@@ -63,6 +65,7 @@ class AIAssistant(commands.Cog):
         if (is_reply_to_bot or is_mentioning_bot) and cfg.get('ai_reply_on_mention', True):
             async with message.channel.typing():
                 try:
+                    # Стартираме съдържанието за Gemini с текста на потребителя
                     contents = [message.content if message.content else "Look at this image."]
                     
                     # 1. Проверка за картинки в текущото съобщение
@@ -75,7 +78,7 @@ class AIAssistant(commands.Cog):
                                     "data": img_bytes
                                 })
                     
-                    # 2. НОВО: Ако е Reply към картинка на бота, изтегли я, за да може Gemini да я ВИДИ и коментира!
+                    # 2. Ако потребителят е направил Reply към съобщение с картинка, Gemini я изтегля и я разглежда
                     if referenced_msg and referenced_msg.attachments:
                         for attachment in referenced_msg.attachments:
                             if attachment.content_type and attachment.content_type.startswith("image/"):
@@ -105,36 +108,25 @@ class AIAssistant(commands.Cog):
                 except Exception as e:
                     await message.reply(f"🎰 *Engine stalled! Error:* `{e}`")
 
-    @app_commands.command(name="imagine", description="Generate a unique image using Gemini (Imagen 3)!")
+    @app_commands.command(name="imagine", description="Generate a unique image using AI!")
     @app_commands.describe(prompt="Describe in detail what you want the AI to draw")
     async def imagine(self, interaction: discord.Interaction, prompt: str):
         await interaction.response.defer()
 
         try:
-            # Директна HTTP заявка към API-то на Google за Imagen 3 (Заобикаляне на грешката от снимка image_ad589d.png)
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key={GEMINI_API_KEY}"
-            payload = {
-                "prompt": prompt,
-                "numberOfImages": 1,
-                "aspectRatio": "1:1",
-                "outputMimeType": "image/jpeg"
-            }
+            # Кодираме текста (интервалите стават на %20 и т.н.), за да бъде валиден URL адрес
+            encoded_prompt = urllib.parse.quote(prompt)
+            
+            # Използваме безплатния и бърз API на Pollinations (модел Flux) без ограничения
+            url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&model=flux"
             
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload) as resp:
+                async with session.get(url) as resp:
                     if resp.status != 200:
-                        err_text = await resp.text()
-                        raise Exception(f"Google API Error ({resp.status})")
-                    
-                    result = await resp.json()
-                    if "generatedImages" not in result:
-                        raise Exception("Image generation blocked by safety filters or prompt issue.")
-                    
-                    # Изваждане на картинката от base64 формат
-                    base64_image = result["generatedImages"][0]["image"]["imageBytes"]
-                    image_bytes = base64.b64decode(base64_image)
+                        raise Exception(f"Image provider error ({resp.status})")
+                    image_bytes = await resp.read()
             
-            img_file = discord.File(io.BytesIO(image_bytes), filename="gemini_artwork.png")
+            img_file = discord.File(io.BytesIO(image_bytes), filename="ai_artwork.png")
             
             await interaction.followup.send(
                 content=f"🎨 **Look what I created for you!**\n`Prompt:` *{prompt}*", 
