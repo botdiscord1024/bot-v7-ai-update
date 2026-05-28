@@ -7,12 +7,12 @@ import discord
 from discord.ext import commands
 from dashboard import app
 
-# 1. НАСТРОЙКА НА DISCORD БОТА
-# Задаваме пълни Intents (увери се, че са включени и в Discord Developer Portal)
+# 1. DISCORD BOT SETUP
+# Enabling all intents (Make sure they are also toggled ON in the Discord Developer Portal)
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Инициализиране на кеш структурата, която dashboard.py изисква
+# Initializing the cache structure required by dashboard.py
 bot.cached_data = {
     'moderation': {},
     'levels': {},
@@ -22,15 +22,15 @@ bot.cached_data = {
     'welcomer': {}
 }
 
-# Функция за синхронизиране на данните от файловете към уеб таблото
+# Function to synchronize file data with the web dashboard cache
 def refresh_bot_cache():
-    print("🔄 Обновяване на кеша на бота от JSON файловете...")
+    print("🔄 Refreshing bot cache from JSON files...")
     try:
-        # Нулиране на текущия кеш
+        # Reset current cache
         for key in bot.cached_data:
             bot.cached_data[key] = {}
 
-        # Зареждане на основните конфигурации (модерация и welcomer)
+        # Loading core configurations (moderation and welcomer)
         if os.path.exists('config.json'):
             with open('config.json', 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -39,75 +39,75 @@ def refresh_bot_cache():
                     if 'welcomer' in cfg:
                         bot.cached_data['welcomer'][gid] = cfg['welcomer']
 
-        # Зареждане на останалите модули
+        # Loading remaining modules
         for key in ['levels', 'counting', 'smashkarts', 'story']:
             filename = f"{key}.json"
             if os.path.exists(filename):
                 with open(filename, 'r', encoding='utf-8') as f:
                     bot.cached_data[key] = json.load(f)
                     
-        print("✅ Кешът на бота е обновен успешно!")
+        print("✅ Bot cache refreshed successfully!")
     except Exception as e:
-        print(f"❌ Грешка при обновяване на кеша: {e}")
+        print(f"❌ Error refreshing cache: {e}")
 
-# Закачаме функцията към builtins, за да може dashboard.py да я вика директно
+# Attaching the function to builtins so dashboard.py can invoke it globally
 builtins.refresh_bot_cache = refresh_bot_cache
 
-# 2. АВТОМАТИЧНО ЗАРЕЖДАНЕ НА COGS (МОДУЛИ)
+# 2. AUTOMATIC COGS (MODULES) LOADER
 @bot.event
 async def setup_hook():
-    # Автоматично намиране и зареждане на всички cogs в папка 'cogs'
+    # Automatically scan and load all cogs inside the 'cogs' directory
     if os.path.exists('cogs'):
         for filename in os.listdir('cogs'):
             if filename.endswith('.py') and not filename.startswith('__'):
                 cog_name = f'cogs.{filename[:-3]}'
                 try:
                     await bot.load_extension(cog_name)
-                    print(f"✅ Успешно зареден модул: {cog_name}")
+                    print(f"✅ Successfully loaded module: {cog_name}")
                 except Exception as e:
-                    print(f"❌ Грешка при зареждане на {cog_name}: {e}")
+                    print(f"❌ Error loading {cog_name}: {e}")
     else:
-        print("⚠️ Папка 'cogs' не беше намерена. Пропускане на автоматичното зареждане.")
+        print("⚠️ 'cogs' folder not found. Skipping automatic extension loading.")
     
-    # Първоначално пълнене на кеша при стартиране
+    # Perform initial cache population on startup
     refresh_bot_cache()
 
 @bot.event
 async def on_ready():
-    print(f"👑 Ботът е онлайн! Влязъл като: {bot.user.name} (ID: {bot.user.id})")
+    print(f"👑 Bot is online! Logged in as: {bot.user.name} (ID: {bot.user.id})")
 
-# 3. СТАРТИРАНЕ НА FLASK УЕБ ТАБЛОТО
+# 3. FLASK WEB DASHBOARD RUNNER
 def run_dashboard():
-    # Взема порта, предоставен от Render (по подразбиране 5000)
+    # Fetch the port allocated by Render (defaults to 5000)
     port = int(os.environ.get("PORT", 5000))
-    print(f"🌐 Стартиране на уеб таблото на порт {port}...")
-    # debug=False предотвратява двоен старт на нишките в среда за продукция
+    print(f"🌐 Starting web dashboard on port {port}...")
+    # debug=False prevents duplicate thread initialization in production environments
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# 4. ОСНОВЕН СТАРТЕР НА ПРИЛОЖЕНИЕТО
+# 4. MAIN APPLICATION ENTRY POINT
 if __name__ == '__main__':
-    print("⚙️ Подготовка на системата...")
+    print("⚙️ Preparing system...")
     
-    # Свързваме инстанцията на бота с Flask уеб приложението
+    # Bind the bot instance to the Flask app configuration context
     app.config['BOT'] = bot
 
-    # Стартираме уеб таблото в отделна фонова нишка (Thread)
+    # Launch the web dashboard inside a separate background thread
     flask_thread = threading.Thread(target=run_dashboard, daemon=True)
     flask_thread.start()
 
-    # Вземаме Discord токена от променливите на средата (Environment Variables) в Render
+    # Pull the Discord token from Render's Environment Variables
     token = os.environ.get("DISCORD_TOKEN")
     
     if not token:
-        print("⚠️ ВНИМАНИЕ: DISCORD_TOKEN не е намерен в променливите на средата!")
-        # Локален спасителен вариант (ако тестваш на компютъра си)
-        token = input("Въведи твоя Discord Token ръчно за локален тест: ").strip()
+        print("⚠️ WARNING: DISCORD_TOKEN environment variable not found!")
+        # Local safety fallback (if running tests on your local machine)
+        token = input("Enter your Discord Token manually for local testing: ").strip()
 
     if token:
-        print("🚀 Стартиране на Discord бота...")
+        print("🚀 Starting Discord bot...")
         try:
             bot.run(token)
         except discord.errors.LoginFailure:
-            print("❌ Грешка: Невалиден Discord токен! Проверете настройките си.")
+            print("❌ Error: Invalid Discord token provided! Check your credentials.")
     else:
-        print("❌ КРИТИЧНА ГРЕШКА: Липсва Discord токен. Приложението спира.")
+        print("❌ CRITICAL ERROR: Missing Discord token. Application halting.")
