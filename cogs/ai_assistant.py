@@ -5,6 +5,7 @@ import aiohttp
 import io
 import asyncio
 import os
+import base64  # Добавено за декодиране на генерираните изображения
 import google.generativeai as genai
 from utils import load, save, err, ok
 
@@ -30,23 +31,31 @@ class AIAssistant(commands.Cog):
             return
 
         # 🛑 --- АВТОМАТИЧНА ЗАЩИТА ОТ ИГРИ И КОМАНДИ ---
-        # Премахваме споменаването на бота от текста, за да проверим реалното съдържание
         bot_mention = f"<@{self.bot.user.id}>"
         bot_mention_nick = f"<@!{self.bot.user.id}>"
         pure_text = message.content.replace(bot_mention, "").replace(bot_mention_nick, "").strip()
 
-        # 1. Ако съобщението е празна команда или започва с префикс (!, ?, /, ., $) -> Игнорирай
         if pure_text.startswith(('!', '?', '/', '$', '.', '-', '>')):
             return
 
-        # 2. Ако съобщението е само 1 символ/буква (опит за познаване в Бесеница) -> Игнорирай
         if len(pure_text) == 1:
             return
         # ----------------------------------------------
 
+        # Проверка дали съобщението е Reply (Отговор) към бота
         is_reply_to_bot = False
-        if message.reference and message.reference.cached_message:
-            if message.reference.cached_message.author.id == self.bot.user.id:
+        referenced_msg = None
+        
+        if message.reference:
+            if isinstance(message.reference.resolved, discord.Message):
+                referenced_msg = message.reference.resolved
+            else:
+                try:
+                    referenced_msg = await message.channel.fetch_message(message.reference.message_id)
+                except:
+                    referenced_msg = None
+            
+            if referenced_msg and referenced_msg.author.id == self.bot.user.id:
                 is_reply_to_bot = True
 
         is_mentioning_bot = self.bot.user in message.mentions
@@ -55,15 +64,27 @@ class AIAssistant(commands.Cog):
             async with message.channel.typing():
                 try:
                     contents = [message.content if message.content else "Look at this image."]
+                    
+                    # 1. Проверка за картинки в текущото съобщение
                     if message.attachments:
                         for attachment in message.attachments:
                             if attachment.content_type and attachment.content_type.startswith("image/"):
                                 img_bytes = await attachment.read()
-                                image_part = {
+                                contents.append({
                                     "mime_type": attachment.content_type,
                                     "data": img_bytes
-                                }
-                                contents.append(image_part)
+                                })
+                    
+                    # 2. НОВО: Ако е Reply към картинка на бота, изтегли я, за да може Gemini да я ВИДИ и коментира!
+                    if referenced_msg and referenced_msg.attachments:
+                        for attachment in referenced_msg.attachments:
+                            if attachment.content_type and attachment.content_type.startswith("image/"):
+                                img_bytes = await attachment.read()
+                                contents.append({
+                                    "mime_type": attachment.content_type,
+                                    "data": img_bytes
+                                })
+
                     model = genai.GenerativeModel(
                         model_name="gemini-2.0-flash", 
                         system_instruction=(
@@ -90,17 +111,29 @@ class AIAssistant(commands.Cog):
         await interaction.response.defer()
 
         try:
-            imagen = genai.ImageGenerationModel("imagen-3.0-generate-002")
+            # Директна HTTP заявка към API-то на Google за Imagen 3 (Заобикаляне на грешката от снимка image_ad589d.png)
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key={GEMINI_API_KEY}"
+            payload = {
+                "prompt": prompt,
+                "numberOfImages": 1,
+                "aspectRatio": "1:1",
+                "outputMimeType": "image/jpeg"
+            }
             
-            result = await asyncio.to_thread(
-                imagen.generate_images,
-                prompt=prompt,
-                number_of_images=1,
-                aspect_ratio="1:1"
-            )
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload) as resp:
+                    if resp.status != 200:
+                        err_text = await resp.text()
+                        raise Exception(f"Google API Error ({resp.status})")
+                    
+                    result = await resp.json()
+                    if "generatedImages" not in result:
+                        raise Exception("Image generation blocked by safety filters or prompt issue.")
+                    
+                    # Изваждане на картинката от base64 формат
+                    base64_image = result["generatedImages"][0]["image"]["imageBytes"]
+                    image_bytes = base64.b64decode(base64_image)
             
-            generated_image = result.images[0]
-            image_bytes = generated_image.image_bytes
             img_file = discord.File(io.BytesIO(image_bytes), filename="gemini_artwork.png")
             
             await interaction.followup.send(
