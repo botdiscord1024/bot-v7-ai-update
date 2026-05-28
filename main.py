@@ -1,85 +1,113 @@
+import os
+import json
+import threading
+import builtins
+import asyncio
 import discord
 from discord.ext import commands
-import os
-import asyncio
-import threading
-from utils import load
+from dashboard import app
 
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
+# 1. DISCORD BOT SETUP
+# Enabling all intents (Make sure they are also toggled ON in the Discord Developer Portal)
+intents = discord.Intents.all()
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
-bot.cached_data = {'levels':{},'counting':{},'smashkarts':{},'story':{}}
+# Initializing the cache structure required by dashboard.py
+bot.cached_data = {
+    'moderation': {},
+    'levels': {},
+    'counting': {},
+    'smashkarts': {},
+    'story': {},
+    'welcomer': {}
+}
 
+# Function to synchronize file data with the web dashboard cache
 def refresh_bot_cache():
-    bot.cached_data['levels']     = load('levels.json')
-    bot.cached_data['counting']   = load('counting.json')
-    bot.cached_data['smashkarts'] = load('smashkarts.json')
-    bot.cached_data['story']      = load('story.json')
+    print("🔄 Refreshing bot cache from JSON files...")
+    try:
+        # Reset current cache
+        for key in bot.cached_data:
+            bot.cached_data[key] = {}
 
-# Make refresh accessible globally
-import builtins
+        # Loading core configurations (moderation and welcomer)
+        if os.path.exists('config.json'):
+            with open('config.json', 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                for gid, cfg in data.items():
+                    bot.cached_data['moderation'][gid] = cfg
+                    if 'welcomer' in cfg:
+                        bot.cached_data['welcomer'][gid] = cfg['welcomer']
+
+        # Loading remaining modules
+        for key in ['levels', 'counting', 'smashkarts', 'story']:
+            filename = f"{key}.json"
+            if os.path.exists(filename):
+                with open(filename, 'r', encoding='utf-8') as f:
+                    bot.cached_data[key] = json.load(f)
+                    
+        print("✅ Bot cache refreshed successfully!")
+    except Exception as e:
+        print(f"❌ Error refreshing cache: {e}")
+
+# Attaching the function to builtins so dashboard.py can invoke it globally
 builtins.refresh_bot_cache = refresh_bot_cache
 
-# ── 💡 ТУК ДОБАВИХМЕ НОВИТЕ ЕЖЕДНЕВНИ МОДУЛИ С ПРАВИЛНИТЕ ГЛАВНИ БУКВИ ──
-COGS = [
-    'cogs.moderation', 
-    'cogs.leveling', 
-    'cogs.counting',
-    'cogs.story', 
-    'cogs.games', 
-    'cogs.smashkarts', 
-    'cogs.ai_assistant',
-    'cogs.FOTD',
-    'cogs.QOTD',
-    'cogs.ROTD',
-    'cogs.SOTD'
-]
+# 2. AUTOMATIC COGS (MODULES) LOADER
+@bot.event
+async def setup_hook():
+    # Automatically scan and load all cogs inside the 'cogs' directory
+    if os.path.exists('cogs'):
+        for filename in os.listdir('cogs'):
+            if filename.endswith('.py') and not filename.startswith('__'):
+                cog_name = f'cogs.{filename[:-3]}'
+                try:
+                    await bot.load_extension(cog_name)
+                    print(f"✅ Successfully loaded module: {cog_name}")
+                except Exception as e:
+                    print(f"❌ Error loading {cog_name}: {e}")
+    else:
+        print("⚠️ 'cogs' folder not found. Skipping automatic extension loading.")
+    
+    # Perform initial cache population on startup
+    refresh_bot_cache()
 
 @bot.event
 async def on_ready():
-    print(f"✅ {bot.user} is online!")
-    refresh_bot_cache()
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} slash commands")
-    except Exception as e:
-        print(f"❌ Sync error: {e}")
-    await bot.change_presence(
-        activity=discord.Activity(type=discord.ActivityType.playing, name="/help 🎮")
-    )
+    print(f"👑 Bot is online! Logged in as: {bot.user.name} (ID: {bot.user.id})")
 
-async def start_bot():
-    async with bot:
-        for cog in COGS:
-            try:
-                await bot.load_extension(cog)
-                print(f"✅ Loaded {cog}")
-            except Exception as e:
-                print(f"❌ Failed to load {cog}: {e}")
-        TOKEN = os.environ.get('BOT_TOKEN')
-        if not TOKEN:
-            print("❌ BOT_TOKEN not set!")
-            return
-        await bot.start(TOKEN)
+# 3. FLASK WEB DASHBOARD RUNNER
+def run_dashboard():
+    # Fetch the port allocated by Render (defaults to 5000)
+    port = int(os.environ.get("PORT", 5000))
+    print(f"🌐 Starting web dashboard on port {port}...")
+    # debug=False prevents duplicate thread initialization in production environments
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-def run_bot():
-    # Create a brand new event loop for the bot thread
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(start_bot())
-    finally:
-        loop.close()
+# 4. MAIN APPLICATION ENTRY POINT
+if __name__ == '__main__':
+    print("⚙️ Preparing system...")
+    
+    # Bind the bot instance to the Flask app configuration context
+    app.config['BOT'] = bot
 
-# Start bot in its own thread with its own event loop
-bot_thread = threading.Thread(target=run_bot, daemon=True)
-bot_thread.start()
+    # Launch the web dashboard inside a separate background thread
+    flask_thread = threading.Thread(target=run_dashboard, daemon=True)
+    flask_thread.start()
 
-# Flask runs in main thread — Render detects the port
-from dashboard import app
-app.config['BOT'] = bot
-port = int(os.environ.get('PORT', 5000))
-print(f"🌐 Dashboard on port {port}")
-app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    # Pull the Discord token from Render's Environment Variables
+    token = os.environ.get("DISCORD_TOKEN")
+    
+    if not token:
+        print("⚠️ WARNING: DISCORD_TOKEN environment variable not found!")
+        # Local safety fallback (if running tests on your local machine)
+        token = input("Enter your Discord Token manually for local testing: ").strip()
+
+    if token:
+        print("🚀 Starting Discord bot...")
+        try:
+            bot.run(token)
+        except discord.errors.LoginFailure:
+            print("❌ Error: Invalid Discord token provided! Check your credentials.")
+    else:
+        print("❌ CRITICAL ERROR: Missing Discord token. Application halting.")
